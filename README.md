@@ -23,6 +23,11 @@ A modern, feature-rich YouTube downloader with a beautiful web interface and pow
 # Clone repository
 git clone https://github.com/diorhc/YouTube-Downloader.git
 cd youtube-downloader
+
+$desktop = "$env:USERPROFILE\Desktop"
+if (-not (Test-Path $desktop)) {
+    New-Item -ItemType Directory -Path $desktop | Out-Null
+}
 $WshShell = New-Object -comObject WScript.Shell
 $Shortcut = $WshShell.CreateShortcut("$desktop\YouTube Downloader.lnk")
 $Shortcut.TargetPath = "$(Resolve-Path 'launcher.bat')"
@@ -35,7 +40,6 @@ Write-Host "Shortcut created on Desktop: YouTube Downloader.lnk"
 start launcher.bat
 # Choose 3. Setup Dependencies
 # Choose 1. Start Web Interface
-
 ```
 
 ### 🐧 Linux / 🍎 macOS

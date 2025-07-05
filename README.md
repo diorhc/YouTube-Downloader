@@ -20,19 +20,27 @@ A modern, feature-rich YouTube downloader with a beautiful web interface and pow
 
 ### 🖥️ Windows (One-Click Setup)
 ```batch
-:: 1. Double-click to start
-launcher.bat
-choose - 3. Setup Dependencies
-chooce - 1. Start Web Interface
+# Clone repository
+git clone https://github.com/diorhc/YouTube-Downloader.git
+cd youtube-downloader
+
+# Start application
+start launcher.bat
+# Choose 3. Setup Dependencies
+# Choose 1. Start Web Interface
 
 ```
 
 ### 🐧 Linux / 🍎 macOS
 ```bash
-:: 1. Double-click to start
-launcher.sh
-choose - 3. Setup Dependencies
-chooce - 1. Start Web Interface
+# Clone repository
+git clone https://github.com/diorhc/YouTube-Downloader.git
+cd youtube-downloader
+
+# Start application
+start launcher.sh
+# Choose 3. Setup Dependencies
+# Choose 1. Start Web Interface
 
 ```
 
@@ -96,17 +104,6 @@ YouTube Downloader/
 │
 ├── templates/
 │   └── index.html            # Web interface template
-```
-
-### Automatic Setup
-```bash
-# Clone repository
-git clone https://github.com/diorhc/YouTube-Downloader.git
-cd youtube-downloader
-
-# Start application
-start launcher.bat
-# Choose 1. Start Web Interface
 ```
 
 ## 🛠️ Configuration

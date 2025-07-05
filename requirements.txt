@@ -1,0 +1,15 @@
+# Core Requirements for YouTube Downloader
+# Minimal production dependencies
+
+# Web framework
+Flask>=3.1.0
+waitress>=3.0.0
+
+# YouTube downloading
+yt-dlp>=2024.12.0
+
+# Video processing (optional, for ultra mode)
+moviepy>=2.0.0
+
+# Additional utilities
+colorama>=0.4.0

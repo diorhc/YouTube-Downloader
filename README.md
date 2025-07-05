@@ -23,6 +23,13 @@ A modern, feature-rich YouTube downloader with a beautiful web interface and pow
 # Clone repository
 git clone https://github.com/diorhc/YouTube-Downloader.git
 cd youtube-downloader
+$WshShell = New-Object -comObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut("$desktop\YouTube Downloader.lnk")
+$Shortcut.TargetPath = "$(Resolve-Path 'launcher.bat')"
+$Shortcut.WorkingDirectory = (Get-Location).Path
+$Shortcut.Description = "YouTube Downloader Launcher"
+$Shortcut.Save()
+Write-Host "Shortcut created on Desktop: YouTube Downloader.lnk"
 
 # Start application
 start launcher.bat

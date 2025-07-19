@@ -12,6 +12,7 @@ import time
 import concurrent.futures
 import random
 import json
+import platform  # Import before numpy to avoid shadowing
 import re
 import subprocess  # Import before numpy to avoid shadowing
 from pathlib import Path
@@ -124,7 +125,7 @@ class VideoMerger:
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             pass
         
-        # Check embedded Python directory
+        # Check embedded Python directory (Windows)
         try:
             embedded_ffmpeg = os.path.join(os.path.dirname(__file__), 'python_embedded', 'bin', 'ffmpeg.exe')
             if os.path.exists(embedded_ffmpeg):
@@ -136,6 +137,45 @@ class VideoMerger:
                     return True
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             pass
+        
+        # Check common installation paths for Linux/macOS
+        system = platform.system()
+        
+        if system == 'Linux':
+            linux_paths = [
+                '/usr/bin/ffmpeg',
+                '/usr/local/bin/ffmpeg',
+                '/snap/bin/ffmpeg',
+                '/opt/homebrew/bin/ffmpeg'  # If using Homebrew on Linux
+            ]
+            for path in linux_paths:
+                if os.path.exists(path):
+                    try:
+                        result = subprocess.run([path, '-version'], 
+                                              capture_output=True, text=True, encoding='utf-8', timeout=5)
+                        if result.returncode == 0:
+                            self.ffmpeg_path = path
+                            return True
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        continue
+        
+        elif system == 'Darwin':  # macOS
+            macos_paths = [
+                '/usr/local/bin/ffmpeg',
+                '/opt/homebrew/bin/ffmpeg',  # Apple Silicon Homebrew
+                '/usr/bin/ffmpeg',
+                '/Applications/ffmpeg'
+            ]
+            for path in macos_paths:
+                if os.path.exists(path):
+                    try:
+                        result = subprocess.run([path, '-version'], 
+                                              capture_output=True, text=True, encoding='utf-8', timeout=5)
+                        if result.returncode == 0:
+                            self.ffmpeg_path = path
+                            return True
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        continue
             
         return False
     
@@ -178,6 +218,15 @@ class VideoMerger:
             return False
 
 class YouTubeDownloader:
+    def _is_cancelled(self):
+        # Check if the current download has been cancelled (for web interface)
+        try:
+            from web_app import active_downloads
+            if hasattr(self, 'download_id') and self.download_id in active_downloads:
+                return active_downloads[self.download_id].get('cancelled', False)
+        except Exception:
+            pass
+        return False
     """
     Ultimate YouTube downloader combining all best practices.
     Supports both standard and ultra modes with intelligent fallbacks.
@@ -195,21 +244,41 @@ class YouTubeDownloader:
         self.progress_hook_callback = callback
         
     def _progress_hook(self, d: Dict[str, Any]) -> None:
-        """Internal progress hook that calls external callback if set."""
+        """Internal progress hook that calls external callback if set, and aborts if cancelled."""
+        # Abort download if cancelled
+        if self._is_cancelled():
+            raise Exception("Download cancelled by user")
         if self.progress_hook_callback:
             self.progress_hook_callback(d)
             
     def get_video_info(self, url: str) -> Optional[Dict[str, Any]]:
-        """Get video information for web interface compatibility."""
+        """Get video information for web interface compatibility with improved error handling."""
         try:
             base_opts = {
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': False,
+                'socket_timeout': 30,  # 30 second timeout
+                'http_chunk_size': 1048576,  # 1MB chunks
             }
             
             # Apply robust options
             opts = self.error_handler.get_robust_options(base_opts)
+            
+            # Additional platform-specific optimizations
+            import platform
+            if platform.system() in ['Darwin', 'Linux']:
+                # Mac/Linux specific optimizations
+                opts.update({
+                    'http_headers': {
+                        **opts.get('http_headers', {}),
+                        'Accept-Encoding': 'gzip, deflate',
+                        'Connection': 'keep-alive',
+                    },
+                    'socket_timeout': 45,  # Longer timeout for Mac/Linux
+                    'retries': 3,
+                    'fragment_retries': 3,
+                })
             
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -217,7 +286,21 @@ class YouTubeDownloader:
                 
         except Exception as e:
             print(f"{Fore.RED}❌ Error getting video info: {e}")
-            return None
+            # Try fallback with minimal options
+            try:
+                fallback_opts = {
+                    'quiet': True,
+                    'no_warnings': True,
+                    'extract_flat': False,
+                    'socket_timeout': 20,
+                    'retries': 1,
+                }
+                with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return info
+            except Exception as fallback_e:
+                print(f"{Fore.RED}❌ Fallback also failed: {fallback_e}")
+                return None
     
     def download_video(self, url: str, quality: str = "best", audio_only: bool = False, 
                       output_name: Optional[str] = None) -> bool:
@@ -285,6 +368,9 @@ class YouTubeDownloader:
             return self._download_standard_mode(url, quality, output_name)
         
         try:
+            if self._is_cancelled():
+                print(f"{Fore.YELLOW}⚠️  Download cancelled (ultra mode)")
+                return False
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Get video info
                 video_info = self._get_video_info(url)
@@ -350,16 +436,20 @@ class YouTubeDownloader:
         """Standard mode with combined streams."""
         print(f"{Fore.CYAN}📥 STANDARD MODE - Reliable Download")
         print(f"{Fore.CYAN}🎯 Target quality: {quality}")
-        
+
+        # Progressive quality fallback for best success rate
+        quality_options = self._get_quality_fallbacks(quality)
+
         # Debug: Log the actual quality selection process
         print(f"{Fore.CYAN}🔍 DEBUG: Requested quality: {quality}")
         print(f"{Fore.CYAN}🔍 DEBUG: Quality fallbacks: {', '.join(quality_options[:5])}")
-        
-        # Progressive quality fallback for best success rate
-        quality_options = self._get_quality_fallbacks(quality)
+
         print(f"{Fore.CYAN}📋 Trying formats: {', '.join(quality_options[:3])}...")
-        
+
         for attempt, fmt in enumerate(quality_options):
+            if self._is_cancelled():
+                print(f"{Fore.YELLOW}⚠️  Download cancelled (standard mode)")
+                return False
             try:
                 print(f"{Fore.YELLOW}🔍 Attempting format: {fmt}")
                 output_template = self._get_output_template(output_name)
@@ -476,6 +566,9 @@ class YouTubeDownloader:
         
         opts = self._add_cookies_option(opts)
         try:
+            if self._is_cancelled():
+                print(f"{Fore.YELLOW}⚠️  Download cancelled (audio only)")
+                return False
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
             print(f"{Fore.GREEN}✅ Audio download completed")

@@ -39,7 +39,7 @@ goto choiceLoop
 cls
 call :printHeader
 call :printSection "Launching Web Interface..."
-start "" http://localhost:5000
+start "" http://localhost:5005
 call :runPython web_app.py
 pause
 goto mainmenu

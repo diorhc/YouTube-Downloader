@@ -72,7 +72,7 @@ class WebDownloader(YouTubeDownloader):
     def __init__(self, download_path: str = "./downloads"):
         super().__init__(download_path)
         self.download_id: Optional[str] = None
-        
+    
     def set_download_id(self, download_id: str) -> None:
         """Set download ID for progress tracking."""
         self.download_id = download_id
@@ -144,8 +144,20 @@ class WebDownloader(YouTubeDownloader):
             import traceback
             traceback.print_exc()
 
+
 # Global downloader instance
 downloader = WebDownloader()
+
+# Cancel download endpoint
+@app.route('/api/cancel_download', methods=['POST'])
+def cancel_download():
+    """Cancel an active download by ID."""
+    data = request.get_json()
+    download_id = data.get('download_id') if data else None
+    if not download_id or download_id not in active_downloads:
+        return jsonify({'error': 'Invalid or missing download_id'}), 400
+    active_downloads[download_id]['cancelled'] = True
+    return jsonify({'status': 'cancelled'})
 
 @app.route('/')
 def index():
@@ -154,7 +166,13 @@ def index():
 
 @app.route('/api/video_info', methods=['POST'])
 def get_video_info():
-    """Get video information efficiently."""
+    """Get video information efficiently with timeout handling."""
+    import signal
+    import threading
+    
+    def timeout_handler(signum, frame):
+        raise TimeoutError("Video info request timed out")
+    
     try:
         data = request.get_json()
         if not data or 'url' not in data:
@@ -171,12 +189,40 @@ def get_video_info():
             resp = make_response(json.dumps({'error': 'URL cannot be empty'}), 400)
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
             return resp
-        # Get video info
-        info = downloader.get_video_info(url)
+        
+        # Use threading instead of signal for cross-platform timeout
+        info_result = [None]
+        error_result = [None]
+        
+        def get_info_thread():
+            try:
+                print(f"[DEBUG] Getting video info for URL: {url}")
+                info_result[0] = downloader.get_video_info(url)
+                print(f"[DEBUG] Video info retrieved successfully")
+            except Exception as e:
+                print(f"[DEBUG] Error in get_info_thread: {e}")
+                error_result[0] = str(e)
+        
+        thread = threading.Thread(target=get_info_thread, daemon=True)
+        thread.start()
+        thread.join(timeout=45)  # 45 second timeout
+        
+        if thread.is_alive():
+            resp = make_response(json.dumps({'error': 'Request timed out. Please try again.'}), 408)
+            resp.headers['Content-Type'] = 'application/json; charset=utf-8'
+            return resp
+        
+        if error_result[0]:
+            resp = make_response(json.dumps({'error': f'Error: {error_result[0]}'}), 500)
+            resp.headers['Content-Type'] = 'application/json; charset=utf-8'
+            return resp
+        
+        info = info_result[0]
         if not info:
             resp = make_response(json.dumps({'error': 'Could not retrieve video information'}), 400)
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
             return resp
+            
         # Extract and optimize video information
         video_info = {
             'title': info.get('title', 'Unknown'),
@@ -602,21 +648,21 @@ if __name__ == '__main__':
     print(f"{icon} Platform: {system_info}")
     print(f"🐍 Python: {python_version}")
     print("🚀 Starting YouTube Downloader Web Interface...")
-    print("📱 Open your browser and go to: http://localhost:5000")
+    print("📱 Open your browser and go to: http://localhost:5005")
     print("🛑 Press Ctrl+C to stop the server")
     
     try:
         # Try to use production server (Waitress)
         from waitress import serve
-        print("🏭 Using production server (Waitress)")
-        serve(app, host='0.0.0.0', port=5000, threads=6)
+        print("\U0001f3ed Using production server (Waitress)")
+        serve(app, host='0.0.0.0', port=5005, threads=6)
     except ImportError:
         # Fallback to Flask development server with optimized settings
-        print("⚠️ Using development server (install waitress for production)")
+        print("\u26a0\ufe0f Using development server (install waitress for production)")
         app.run(
             debug=False,
             host='0.0.0.0',
-            port=5000,
+            port=5005,
             threaded=True,
             use_reloader=False
         )

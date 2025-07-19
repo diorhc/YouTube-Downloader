@@ -30,9 +30,9 @@ case "$OS" in
         PLATFORM="Linux"
         PYTHON_URL="https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz"
         if [[ "$ARCH" == "x86_64" ]]; then
-            FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+            FFMPEG_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
         else
-            FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+            FFMPEG_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
         fi
         ;;
     *)
@@ -107,6 +107,16 @@ setup_python_venv() {
     if [[ ! -x "$PYEXE" ]]; then
         print_info "Creating Python virtual environment..."
         
+        # Check if python3-venv is available on Debian/Ubuntu systems
+        if command -v apt &> /dev/null; then
+            if ! python3 -c "import venv" &> /dev/null; then
+                print_error "Python venv module not found."
+                print_info "On Debian/Ubuntu, install with: sudo apt install python3-venv"
+                print_info "Or try: sudo apt install python3.10-venv python3.11-venv python3.12-venv"
+                return 1
+            fi
+        fi
+        
         # Use system Python to create virtual environment
         if command -v python3 &> /dev/null; then
             python3 -m venv "$PYDIR"
@@ -121,89 +131,86 @@ setup_python_venv() {
             print_success "Python virtual environment created."
         else
             print_error "Failed to create Python virtual environment."
+            print_info "The virtual environment directory exists but Python executable is missing."
+            print_info "Removing failed directory and try again."
+            rm -rf "$PYDIR"
             return 1
         fi
     else
         print_success "Python virtual environment already exists."
     fi
-    
+
+    # Ensure pip is installed
+    if ! "$PYEXE" -m pip --version &> /dev/null; then
+        print_info "pip not found, bootstrapping pip..."
+        
+        # Try to download get-pip.py
+        if command -v curl &> /dev/null; then
+            curl -O https://bootstrap.pypa.io/get-pip.py
+        elif command -v wget &> /dev/null; then
+            wget https://bootstrap.pypa.io/get-pip.py
+        else
+            print_error "curl or wget required to download pip. Please install one of them:"
+            print_info "sudo apt install curl"
+            print_info "or"
+            print_info "sudo apt install wget"
+            return 1
+        fi
+        
+        # Check if download was successful
+        if [[ -f "get-pip.py" ]]; then
+            "$PYEXE" get-pip.py
+            if [[ $? -eq 0 ]]; then
+                print_success "pip installed successfully."
+                rm -f get-pip.py
+            else
+                print_error "Failed to install pip."
+                rm -f get-pip.py
+                return 1
+            fi
+        else
+            print_error "Failed to download get-pip.py"
+            return 1
+        fi
+    fi
+
     # Upgrade pip
-    print_info "Upgrading pip..."
-    "$PYEXE" -m pip install --upgrade pip
-    
+    if "$PYEXE" -m pip --version &> /dev/null; then
+        print_info "Upgrading pip..."
+        "$PYEXE" -m pip install --upgrade pip
+    else
+        print_error "pip still not available after installation attempt."
+        return 1
+    fi
+
     return 0
 }
 
 setup_ffmpeg() {
     if [[ ! -x "$FFMPEG" ]]; then
-        print_info "Downloading FFmpeg..."
+        print_info "Installing FFmpeg..."
         
         case "$OS" in
-            "Darwin")
-                # macOS - download from evermeet.cx
-                if command -v curl &> /dev/null; then
-                    curl -L "$FFMPEG_URL" -o ffmpeg.zip
-                elif command -v wget &> /dev/null; then
-                    wget "$FFMPEG_URL" -O ffmpeg.zip
-                else
-                    print_error "curl or wget required for download."
-                    return 1
-                fi
-                
-                if [[ -f "ffmpeg.zip" ]]; then
-                    print_info "Extracting FFmpeg..."
-                    mkdir -p "$PYDIR/bin"
-                    unzip -q ffmpeg.zip -d "$PYDIR/bin/"
-                    chmod +x "$PYDIR/bin/ffmpeg"
-                    rm -f ffmpeg.zip
-                    
-                    if [[ -x "$FFMPEG" ]]; then
-                        print_success "FFmpeg installed."
-                    else
-                        print_error "Failed to extract FFmpeg."
-                        return 1
-                    fi
-                else
-                    print_error "Failed to download FFmpeg."
-                    return 1
-                fi
-                ;;
-                
-            "Linux")
-                # Linux - download static build
-                if command -v curl &> /dev/null; then
-                    curl -L "$FFMPEG_URL" -o ffmpeg.tar.xz
-                elif command -v wget &> /dev/null; then
-                    wget "$FFMPEG_URL" -O ffmpeg.tar.xz
-                else
-                    print_error "curl or wget required for download."
-                    return 1
-                fi
-                
-                if [[ -f "ffmpeg.tar.xz" ]]; then
-                    print_info "Extracting FFmpeg..."
-                    mkdir -p ffmpeg_temp
-                    tar -xf ffmpeg.tar.xz -C ffmpeg_temp
-                    mkdir -p "$PYDIR/bin"
-                    
-                    # Find ffmpeg binary and copy it
-                    find ffmpeg_temp -name "ffmpeg" -type f -exec cp {} "$PYDIR/bin/" \;
-                    chmod +x "$PYDIR/bin/ffmpeg"
-                    
-                    rm -rf ffmpeg_temp ffmpeg.tar.xz
-                    
-                    if [[ -x "$FFMPEG" ]]; then
-                        print_success "FFmpeg installed."
-                    else
-                        print_error "Failed to extract FFmpeg."
-                        return 1
-                    fi
-                else
-                    print_error "Failed to download FFmpeg."
-                    return 1
-                fi
-                ;;
-        esac
+        "Darwin")
+            if command -v brew &> /dev/null; then
+                print_info "Installing FFmpeg with Homebrew..."
+                brew install ffmpeg
+            else
+                print_error "Homebrew not found. Install it from https://brew.sh/"
+            fi
+            ;;
+        "Linux")
+            if command -v apt &> /dev/null; then
+                print_info "Installing FFmpeg with apt..."
+                sudo apt update && sudo apt install -y ffmpeg
+            else
+                print_error "apt not found. Please install FFmpeg manually for your distribution."
+            fi
+            ;;
+        *)
+            print_error "Unsupported OS for automatic FFmpeg installation."
+            ;;
+    esac
     else
         print_success "FFmpeg already present."
     fi
@@ -235,18 +242,18 @@ web_interface() {
         return 1
     fi
     
-    print_info "Starting web server on http://localhost:5000"
+    print_info "Starting web server on http://localhost:5005"
     
     # Open browser (platform-specific)
     case "$OS" in
         "Darwin")
-            open "http://localhost:5000" &
+            open "http://localhost:5005" &
             ;;
         "Linux")
             if command -v xdg-open &> /dev/null; then
-                xdg-open "http://localhost:5000" &
+                xdg-open "http://localhost:5005" &
             elif command -v gnome-open &> /dev/null; then
-                gnome-open "http://localhost:5000" &
+                gnome-open "http://localhost:5005" &
             fi
             ;;
     esac

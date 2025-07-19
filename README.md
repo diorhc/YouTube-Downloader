@@ -22,7 +22,7 @@ A modern, feature-rich YouTube downloader with a beautiful web interface and pow
 ```batch
 # Clone repository
 git clone https://github.com/diorhc/YouTube-Downloader.git
-cd youtube-downloader
+cd YouTube-Downloader
 
 $desktop = "$env:USERPROFILE\Desktop"
 if (-not (Test-Path $desktop)) {
@@ -45,11 +45,12 @@ start launcher.bat
 ### 🐧 Linux / 🍎 macOS
 ```bash
 # Clone repository
+sudo apt install git -y
 git clone https://github.com/diorhc/YouTube-Downloader.git
-cd youtube-downloader
+cd YouTube-Downloader
 
 # Start application
-start launcher.sh
+bash launcher.sh
 # Choose 3. Setup Dependencies
 # Choose 1. Start Web Interface
 

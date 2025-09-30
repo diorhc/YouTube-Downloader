@@ -2,11 +2,11 @@
 # Minimal production dependencies
 
 # Web framework
-Flask>=3.1.1
+Flask>=3.1.2
 waitress>=3.0.2
 
 # YouTube downloading
-yt-dlp>=2025.06.30
+yt-dlp>=2025.09.26
 
 # Video processing (optional, for ultra mode)
 moviepy>=2.2.1

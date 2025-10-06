@@ -59,7 +59,7 @@ bash launcher.sh
 ### 🌐 Web Interface Usage
 
 1. **Start the server:** `python web_app.py` or `launcher.bat`
-2. **Open your browser:** Go to [http://localhost:5000]
+2. **Open your browser:** Go to [http://localhost:5005]
 3. **Paste YouTube URL:** Enter any YouTube video URL
 4. **Select quality:** Choose video quality or audio-only
 5. **Download:** Click download and watch real-time progress
@@ -107,7 +107,6 @@ YouTube Downloader/
 ├── youtube_downloader.py     # Core download engine
 ├── web_app.py                # Flask web application
 ├── test_quality_fix.py       # Quality detection
-├── launcher.py               # Universal launcher
 ├── launcher.bat              # Windows launcher
 ├── launcher.sh               # MacOS/Linux launcher
 ├── requirements.txt          # Python dependencies
@@ -124,7 +123,7 @@ YouTube Downloader/
 Create a `.env` file for custom configuration:
 ```env
 FLASK_HOST=0.0.0.0
-FLASK_PORT=5000
+FLASK_PORT=5005
 FLASK_DEBUG=False
 DEFAULT_QUALITY=1080p
 DOWNLOAD_PATH=./downloads/
@@ -141,12 +140,31 @@ HOST = "0.0.0.0"  # Listen on all interfaces
 PORT = 8080       # Custom port
 ```
 
+## Auto-update of requirements
+
+On startup the launcher will attempt to refresh `requirements.txt` from the
+current Python environment using a small whitelist of core packages. This runs
+in dry-run mode by default so it only prints the proposed changes.
+
+- Disable automatic checks by setting the environment variable
+    `AUTO_UPDATE_REQUIREMENTS=0`.
+- Force a real write by setting `AUTO_UPDATE_DRY_RUN=0` before running the
+    launcher.
+- Or pass the CLI flag `--no-auto-update` when starting `launcher.py`.
+
+The feature is conservative: it updates a short, maintainable list of core
+packages instead of a full `pip freeze` to avoid adding transitive dependencies.
+
+Launcher "Update" (option 4) now checks the active Python environment (embedded
+first, then system Python) for outdated packages and will offer to upgrade them
+automatically. This runs `pip list --outdated` and upgrades packages one-by-one.
+
 ## 🐛 Troubleshooting
 
 | Problem                  | Solution                                      |
 |--------------------------|-----------------------------------------------|
 | `ModuleNotFoundError`    | Run `pip install -r requirements.txt`         |
-| Web server won't start   | Check if port 5000 is in use, try another     |
+| Web server won't start   | Check if port 5005 is in use, try another     |
 | Download fails           | Update yt-dlp: `pip install --upgrade yt-dlp` |
 | No audio in video        | Install FFmpeg and ensure it's in PATH        |
 | 403 Forbidden errors     | Tool retries automatically                    |

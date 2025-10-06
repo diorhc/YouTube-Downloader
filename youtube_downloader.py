@@ -1,30 +1,39 @@
 #!/usr/bin/env python3
 """
 YouTube Downloader - Optimized Solution
+
+A robust YouTube downloader with advanced features:
+- Multiple quality options (144p to 8K)
+- Audio-only downloads
+- Error recovery and retry logic
+- SSL certificate handling
+- Multi-mode support (ultra/standard)
+- FFmpeg and MoviePy integration
 """
 
 import os
 import sys
-import argparse  # Import before numpy to avoid shadowing
+import argparse
 import tempfile
 import threading
 import time
 import concurrent.futures
 import random
 import json
-import platform  # Import before numpy to avoid shadowing
+import platform
 import re
-import subprocess  # Import before numpy to avoid shadowing
+import subprocess
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, List  # Import before numpy to avoid shadowing
+from typing import Optional, Dict, Any, Tuple, List
+
 import yt_dlp
 from colorama import init, Fore, Style
 
-# Initialize colorama
+# Initialize colorama for cross-platform colored output
 init(autoreset=True)
 
 class ErrorHandler:
-    """Error recovery system for YouTube downloads."""
+    """Error recovery system for streaming downloads."""
     
     @staticmethod
     def get_robust_options(base_opts: Dict[str, Any]) -> Dict[str, Any]:
@@ -218,8 +227,23 @@ class VideoMerger:
             return False
 
 class YouTubeDownloader:
+    """
+    Ultimate YouTube downloader combining all best practices.
+    Supports both standard and ultra modes with intelligent fallbacks.
+    """
+    
+    def __init__(self, download_path: str = "./downloads", insecure_ssl: bool = False):
+        self.download_path = Path(download_path)
+        self.download_path.mkdir(exist_ok=True)
+        self.merger = VideoMerger()
+        self.error_handler = ErrorHandler()
+        self.progress_hook_callback = None
+        self.audio_language = None  # Selected audio language
+        # If true, pass nocheckcertificate=True to yt-dlp options (insecure)
+        self.insecure_ssl = bool(insecure_ssl)
+    
     def _is_cancelled(self):
-        # Check if the current download has been cancelled (for web interface)
+        """Check if the current download has been cancelled (for web interface)."""
         try:
             from web_app import active_downloads
             if hasattr(self, 'download_id') and self.download_id in active_downloads:
@@ -227,29 +251,124 @@ class YouTubeDownloader:
         except Exception:
             pass
         return False
-    """
-    Ultimate YouTube downloader combining all best practices.
-    Supports both standard and ultra modes with intelligent fallbacks.
-    """
-    
-    def __init__(self, download_path: str = "./downloads"):
-        self.download_path = Path(download_path)
-        self.download_path.mkdir(exist_ok=True)
-        self.merger = VideoMerger()
-        self.error_handler = ErrorHandler()
-        self.progress_hook_callback = None
         
     def set_progress_hook(self, callback):
         """Set progress hook callback for web interface compatibility."""
         self.progress_hook_callback = callback
+    
+    def _apply_ssl_options(self, opts: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply SSL options based on insecure_ssl flag."""
+        if self.insecure_ssl:
+            opts['nocheckcertificate'] = True
+        return opts
+    
+    def _is_ssl_error(self, error_str: str) -> bool:
+        """Check if error is an SSL certificate verification error."""
+        ssl_indicators = [
+            'CERTIFICATE_VERIFY_FAILED', 'certificate verify failed', 
+            'CertificateVerifyError', '[SSL:', 'SSL: CERTIFICATE_VERIFY_FAILED'
+        ]
+        return any(indicator.lower() in error_str.lower() for indicator in ssl_indicators)
         
     def _progress_hook(self, d: Dict[str, Any]) -> None:
         """Internal progress hook that calls external callback if set, and aborts if cancelled."""
         # Abort download if cancelled
         if self._is_cancelled():
             raise Exception("Download cancelled by user")
+        # When a file is finished, validate container metadata and fix if needed
+        try:
+            if d.get('status') in ('finished', 'done') and d.get('filename'):
+                try:
+                    fixed = self._validate_and_fix_file(d['filename'])
+                    if fixed and fixed != d['filename']:
+                        # Update filename in the progress dict so callers see corrected path
+                        d = dict(d)
+                        d['filename'] = fixed
+                except Exception:
+                    # Non-fatal - continue and report original
+                    pass
+        except Exception:
+            pass
+
         if self.progress_hook_callback:
             self.progress_hook_callback(d)
+
+    def _validate_and_fix_file(self, filename: str) -> Optional[str]:
+        """Check media metadata (duration, resolution). If invalid, try to remux with ffmpeg.
+
+        Returns the path to a validated file (may be same as input) or None on failure.
+        """
+        try:
+            path = Path(filename)
+            if not path.exists():
+                return None
+
+            # Run ffprobe to get duration and stream info
+            info = self._ffprobe(path)
+            duration = info.get('duration', 0)
+            width = info.get('width', 0)
+
+            # If duration or width are missing/zero, attempt to remux to mp4
+            if (not duration or duration <= 0) or (not width or width <= 0):
+                # Choose target path with .mp4 extension in same dir
+                target = path.with_suffix('.mp4')
+                # If target exists, append suffix
+                if target.exists():
+                    target = path.with_name(path.stem + '_fixed.mp4')
+
+                ok = self._remux_to_mp4(str(path), str(target))
+                if ok and Path(target).exists():
+                    try:
+                        # Replace original file with fixed file if appropriate
+                        # Keep original as backup with .orig suffix
+                        backup = path.with_suffix(path.suffix + '.orig')
+                        if not backup.exists():
+                            path.replace(backup)
+                        Path(target).replace(path)
+                        return str(path)
+                    except Exception:
+                        return str(target)
+            return str(path)
+        except Exception:
+            return None
+
+    def _ffprobe(self, path: Path) -> Dict[str, Any]:
+        """Run ffprobe (using detected ffmpeg path) and return parsed basic info."""
+        try:
+            ffmpeg_cmd = getattr(self.merger, 'ffmpeg_path', 'ffmpeg')
+            cmd = [ffmpeg_cmd.replace('ffmpeg', 'ffprobe'), '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(path)]
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=15)
+            out = result.stdout.strip().splitlines()
+            info: Dict[str, Any] = {}
+            if out:
+                # Expect duration, width, height in some order; try to parse
+                try:
+                    # If three lines: duration, width, height
+                    if len(out) >= 3:
+                        info['duration'] = float(out[0]) if out[0] else 0
+                        info['width'] = int(out[1]) if out[1] else 0
+                        info['height'] = int(out[2]) if out[2] else 0
+                    elif len(out) == 2:
+                        info['duration'] = float(out[0]) if out[0] else 0
+                        info['width'] = int(out[1]) if out[1] else 0
+                        info['height'] = 0
+                    else:
+                        info['duration'] = float(out[0]) if out[0] else 0
+                except Exception:
+                    pass
+            return info
+        except Exception:
+            return {}
+
+    def _remux_to_mp4(self, src: str, dst: str) -> bool:
+        """Use ffmpeg to remux/copy streams into an MP4 container with faststart."""
+        try:
+            ffmpeg_cmd = getattr(self.merger, 'ffmpeg_path', 'ffmpeg')
+            cmd = [ffmpeg_cmd, '-y', '-i', src, '-c', 'copy', '-movflags', '+faststart', dst]
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=300)
+            return result.returncode == 0
+        except Exception:
+            return False
             
     def get_video_info(self, url: str) -> Optional[Dict[str, Any]]:
         """Get video information for web interface compatibility with improved error handling."""
@@ -280,12 +399,36 @@ class YouTubeDownloader:
                     'fragment_retries': 3,
                 })
             
+            # Apply SSL options
+            opts = self._apply_ssl_options(opts)
+
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return info
                 
         except Exception as e:
+            err_str = str(e)
             print(f"{Fore.RED}❌ Error getting video info: {e}")
+
+            # If it's an SSL certificate verification issue, try with nocheckcertificate
+            if self._is_ssl_error(err_str) and not self.insecure_ssl:
+                print(f"{Fore.YELLOW}⚠️  SSL certificate verification failed. Retrying with 'nocheckcertificate'=True (insecure).")
+                try:
+                    ssl_opts = base_opts.copy()
+                    ssl_opts['nocheckcertificate'] = True
+                    # Merge robust options
+                    try:
+                        ssl_opts = {**self.error_handler.get_robust_options({}), **ssl_opts}
+                    except Exception:
+                        pass
+
+                    with yt_dlp.YoutubeDL(ssl_opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        print(f"{Fore.GREEN}✅ Retrieved info using nocheckcertificate fallback")
+                        return info
+                except Exception as ssl_e:
+                    print(f"{Fore.RED}❌ SSL-fallback failed: {ssl_e}")
+
             # Try fallback with minimal options
             try:
                 fallback_opts = {
@@ -313,13 +456,13 @@ class YouTubeDownloader:
         Universal download method with intelligent mode selection.
         
         Args:
-            url: YouTube video URL
+            url: Video URL (YouTube, VK, Yandex, etc.)
             quality: Video quality (best, 4k, 1080p, 720p, 480p, 360p)
             mode: Download mode (auto, ultra, standard)
             output_name: Custom output filename
             audio_only: Download audio only
         """
-        print(f"{Fore.MAGENTA}� YouTube Downloader")
+        print(f"{Fore.MAGENTA}🎬 Unified Video Downloader")
         print(f"{Fore.CYAN}🎯 URL: {url}")
         print(f"{Fore.CYAN}📺 Quality: {quality}")
         
@@ -437,6 +580,11 @@ class YouTubeDownloader:
         print(f"{Fore.CYAN}📥 STANDARD MODE - Reliable Download")
         print(f"{Fore.CYAN}🎯 Target quality: {quality}")
 
+        # Check if audio language is specified
+        selected_audio_lang = getattr(self, 'audio_language', None)
+        if selected_audio_lang:
+            print(f"{Fore.CYAN}🌐 Requested audio language: {selected_audio_lang}")
+
         # Progressive quality fallback for best success rate
         quality_options = self._get_quality_fallbacks(quality)
 
@@ -452,10 +600,27 @@ class YouTubeDownloader:
                 return False
             try:
                 print(f"{Fore.YELLOW}🔍 Attempting format: {fmt}")
+                
+                # Modify format string to include audio language if specified
+                format_str = fmt
+                if selected_audio_lang:
+                    # Add language filter to the format selector
+                    # For combined formats: best[language=lang]
+                    # For separate streams: bestvideo+bestaudio[language=lang]
+                    if '+' in format_str:
+                        # Separate streams format
+                        parts = format_str.split('+')
+                        if len(parts) == 2:
+                            format_str = f"{parts[0]}+bestaudio[language={selected_audio_lang}]/{format_str}"
+                    else:
+                        # Try to prefer the selected language in combined format
+                        format_str = f"{fmt}[language={selected_audio_lang}]/{fmt}"
+                    print(f"{Fore.CYAN}🌐 Using audio language filter: {selected_audio_lang}")
+                
                 output_template = self._get_output_template(output_name)
                 
                 opts = {
-                    'format': fmt,
+                    'format': format_str,
                     'outtmpl': output_template,
                     'writeinfojson': False,
                     'writesubtitles': False,
@@ -485,8 +650,8 @@ class YouTubeDownloader:
                     time.sleep(random.uniform(2, 5))  # Longer delay for better success
                 
                 opts = self._add_cookies_option(opts)
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
+                if not self._ydl_download_with_ssl_fallback(opts, url):
+                    raise Exception('Download failed')
                     
                 print(f"{Fore.GREEN}✅ Download completed successfully with format: {fmt}")
                 return True
@@ -569,8 +734,9 @@ class YouTubeDownloader:
             if self._is_cancelled():
                 print(f"{Fore.YELLOW}⚠️  Download cancelled (audio only)")
                 return False
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+            if not self._ydl_download_with_ssl_fallback(opts, url):
+                print(f"{Fore.RED}❌ Audio download failed")
+                return False
             print(f"{Fore.GREEN}✅ Audio download completed")
             return True
         except Exception as e:
@@ -588,14 +754,56 @@ class YouTubeDownloader:
                     time.sleep(random.uniform(1, 3))
                 
                 opts = self._add_cookies_option(opts)
+                opts = self._apply_ssl_options(opts)
+                
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     return ydl.extract_info(url, download=False)
                     
             except Exception as e:
+                err_str = str(e)
+                
+                # SSL fallback only if not already using insecure mode
+                if self._is_ssl_error(err_str) and not self.insecure_ssl:
+                    print(f"{Fore.YELLOW}⚠️  SSL certificate verification failed. Retrying with 'nocheckcertificate'=True.")
+                    try:
+                        ssl_opts = {**opts, 'nocheckcertificate': True}
+                        with yt_dlp.YoutubeDL(ssl_opts) as ydl:
+                            return ydl.extract_info(url, download=False)
+                    except Exception as ssl_e:
+                        print(f"{Fore.RED}❌ SSL-fallback failed: {ssl_e}")
+
                 if attempt == 2:
                     print(f"{Fore.RED}❌ Failed to get video info: {e}")
                     
         return None
+
+    def _ydl_download_with_ssl_fallback(self, opts: Dict[str, Any], url: str) -> bool:
+        """Run yt-dlp download with SSL-fallback retry (nocheckcertificate=True).
+
+        Returns True on success, False on failure.
+        """
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            return True
+        except Exception as e:
+            err_str = str(e)
+            
+            # SSL fallback only if not already using insecure mode
+            if self._is_ssl_error(err_str) and not self.insecure_ssl:
+                print(f"{Fore.YELLOW}⚠️  SSL certificate verification failed during download. Retrying with 'nocheckcertificate'=True.")
+                try:
+                    ssl_opts = {**opts, 'nocheckcertificate': True}
+                    with yt_dlp.YoutubeDL(ssl_opts) as ydl:
+                        ydl.download([url])
+                    print(f"{Fore.GREEN}✅ Download succeeded using nocheckcertificate fallback")
+                    return True
+                except Exception as ssl_e:
+                    print(f"{Fore.RED}❌ SSL-fallback download failed: {ssl_e}")
+                    return False
+            else:
+                print(f"{Fore.RED}❌ Download failed: {e}")
+                return False
     
     def _select_formats(self, video_info: Dict, quality: str) -> Tuple[Optional[str], Optional[str]]:
         """Smart format selection for separate streams with better validation."""
@@ -606,6 +814,9 @@ class YouTubeDownloader:
             '1080p': 1080, '720p': 720, '480p': 480, '360p': 360
         }
         target_height = quality_heights.get(quality.lower(), 1080)
+        
+        # Get selected audio language if available
+        selected_audio_lang = getattr(self, 'audio_language', None)
         
         # Find video-only formats with better filtering and reliability scoring
         video_formats = []
@@ -636,14 +847,30 @@ class YouTubeDownloader:
                 is_reliable = 'https' in protocol and 'm3u8' not in protocol and 'Untested' not in format_note
                 
                 f['_reliability_score'] = 1 if is_reliable else 0
-                audio_formats.append(f)
+                
+                # Filter by audio language if specified
+                if selected_audio_lang:
+                    fmt_lang = f.get('language') or f.get('lang')
+                    if fmt_lang and fmt_lang == selected_audio_lang:
+                        audio_formats.append(f)
+                else:
+                    audio_formats.append(f)
         
-        # If no separate streams available, return None to fall back to standard mode
+        # If no explicit separate streams available, try a safe fallback
         if not video_formats or not audio_formats:
-            print(f"{Fore.YELLOW}⚠️  No separate video/audio streams available")
-            print(f"{Fore.YELLOW}   Video formats found: {len(video_formats)}")
-            print(f"{Fore.YELLOW}   Audio formats found: {len(audio_formats)}")
-            return None, None
+            print(f"{Fore.YELLOW}⚠️  No explicit separate video/audio streams available (filtered)")
+            print(f"{Fore.YELLOW}   Video formats matched: {len(video_formats)}")
+            print(f"{Fore.YELLOW}   Audio formats matched: {len(audio_formats)}")
+            if selected_audio_lang:
+                print(f"{Fore.YELLOW}   Requested audio language: {selected_audio_lang}")
+
+            # As a fallback, attempt to use generic selectors that ask yt-dlp to pick
+            # the best video and best audio. If an audio language was requested, include it.
+            # This allows ULTRA mode to still download separate streams even when our
+            # stricter filtering didn't find explicit format entries.
+            audio_selector = f"bestaudio[language={selected_audio_lang}]" if selected_audio_lang else "bestaudio"
+            print(f"{Fore.CYAN}🔁 Falling back to generic selectors: bestvideo + {audio_selector}")
+            return 'bestvideo', audio_selector
         
         # Sort by preference: reliability first, then quality targeting
         video_formats.sort(key=lambda x: (
@@ -677,6 +904,11 @@ class YouTubeDownloader:
         print(f"{Fore.CYAN}📹 Selected video: {video_format['format_id']} ({video_format.get('height', 'unknown')}p)")
         print(f"{Fore.CYAN}🎵 Selected audio: {audio_format['format_id']} ({audio_format.get('abr', 'unknown')} kbps)")
         
+        # Log selected audio language if specified
+        if selected_audio_lang:
+            audio_lang_name = audio_format.get('language_name') or audio_format.get('language') or selected_audio_lang
+            print(f"{Fore.CYAN}🌐 Audio language: {audio_lang_name} ({selected_audio_lang})")
+        
         return video_format['format_id'], audio_format['format_id']
     
     def _download_separate_streams(self, url: str, temp_dir: str, 
@@ -703,8 +935,8 @@ class YouTubeDownloader:
                     opts['progress_hooks'] = [self._progress_hook]
                 
                 opts = self._add_cookies_option(opts)
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
+                if not self._ydl_download_with_ssl_fallback(opts, url):
+                    raise Exception('Video stream download failed')
                 
                 video_files = list(Path(temp_dir).glob('video.*'))
                 video_file = str(video_files[0]) if video_files else None
@@ -742,8 +974,8 @@ class YouTubeDownloader:
                     opts['progress_hooks'] = [self._progress_hook]
                 
                 opts = self._add_cookies_option(opts)
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
+                if not self._ydl_download_with_ssl_fallback(opts, url):
+                    raise Exception('Audio stream download failed')
                 
                 audio_files = list(Path(temp_dir).glob('audio.*'))
                 audio_file = str(audio_files[0]) if audio_files else None
@@ -992,7 +1224,7 @@ class YouTubeDownloader:
     
     def print_capabilities(self) -> None:
         """Print downloader capabilities."""
-        print(f"\n{Fore.MAGENTA}🚀 Ultimate YouTube Downloader Capabilities")
+        print(f"\n{Fore.MAGENTA}🚀 Multi-Platform Downloader Capabilities")
         print(f"{Fore.CYAN}{'='*50}")
         print(f"{Fore.GREEN}✅ Advanced error recovery (403, 429, geo-blocking)")
         print(f"{Fore.GREEN}✅ Intelligent quality fallback")
@@ -1034,9 +1266,22 @@ class YouTubeDownloader:
                 'outtmpl': '%(title)s.%(ext)s',
                 'restrictfilenames': True,
             }
+            opts = self._apply_ssl_options(opts)
             
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                try:
+                    info = ydl.extract_info(url, download=False)
+                except Exception as e:
+                    err_str = str(e)
+                    # SSL fallback only if not already using insecure mode
+                    if self._is_ssl_error(err_str) and not self.insecure_ssl:
+                        print(f"{Fore.YELLOW}⚠️  SSL error while debugging formats. Retrying with 'nocheckcertificate'=True.")
+                        ssl_opts = {**opts, 'nocheckcertificate': True}
+                        with yt_dlp.YoutubeDL(ssl_opts) as ydl2:
+                            info = ydl2.extract_info(url, download=False)
+                    else:
+                        raise
+                
                 formats = info.get('formats', [])
                 
                 print(f"{Fore.CYAN}🔍 DEBUG: Available formats for video:")
@@ -1074,8 +1319,8 @@ class YouTubeDownloader:
 
 def main():
     """Command line interface."""
-    parser = argparse.ArgumentParser(description='Ultimate YouTube Downloader')
-    parser.add_argument('url', nargs='?', help='YouTube video URL')
+    parser = argparse.ArgumentParser(description='Ultimate Multi-Platform Video Downloader')
+    parser.add_argument('url', nargs='?', help='Video URL (YouTube, VK, Yandex, etc.)')
     parser.add_argument('-q', '--quality', default='best', 
                        choices=['best', '4k', '1440p', '1080p', '720p', '480p', '360p'],
                        help='Video quality (default: best)')

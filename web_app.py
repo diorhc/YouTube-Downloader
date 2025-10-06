@@ -1,29 +1,38 @@
 #!/usr/bin/env python3
 """
 YouTube Downloader Web Interface
-Flask-based web interface with improved performance.
+
+Flask-based web interface for multi-platform video downloads.
+Features:
+- Real-time progress tracking via Server-Sent Events (SSE)
+- Multiple quality options
+- Audio-only downloads
+- Download history
+- Secure file handling
 """
 
 import os
 import json
 import threading
 import sys
-import uuid  # Import before numpy to avoid shadowing
+import uuid
 import tempfile
-from datetime import datetime  # Import before numpy to avoid shadowing
-from typing import Dict, Any, Optional  # Import before numpy to avoid shadowing
+import subprocess
+import platform
+from datetime import datetime
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 # Add current directory to Python path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from flask import Flask, render_template, request, jsonify, send_file, make_response
+from flask import Flask, render_template, request, jsonify, send_file, make_response, Response
+import time
+
 from youtube_downloader import YouTubeDownloader
 
 # Initialize Flask app with optimized configuration
 app = Flask(__name__)
-from flask import Response
-import time
 
 # SSE: Stream download progress updates
 @app.route('/api/progress_sse/<download_id>')
@@ -44,6 +53,19 @@ def progress_sse(download_id: str):
                 if progress.get('status') == 'completed':
                     progress = progress.copy()
                     progress['download_id'] = download_id
+                    # Persist file_path if present and not already stored
+                    fp = progress.get('file_path')
+                    if fp:
+                        try:
+                            # Save resolved absolute path into completed_downloads
+                            resolved = str(Path(fp).resolve())
+                            if download_id in completed_downloads:
+                                completed_downloads[download_id]['file_path'] = resolved
+                            elif download_id in active_downloads:
+                                active_downloads[download_id]['file_path'] = resolved
+                            progress['file_path'] = resolved
+                        except Exception:
+                            pass
                     if 'filename' not in progress or not progress['filename']:
                         # Try to get filename from completed_downloads
                         cd = completed_downloads.get(download_id)
@@ -67,7 +89,7 @@ active_downloads: Dict[str, Dict[str, Any]] = {}
 completed_downloads: Dict[str, Dict[str, Any]] = {}
 
 class WebDownloader(YouTubeDownloader):
-    """Web version of YouTube downloader."""
+    """Web version of the multi-platform downloader."""
     
     def __init__(self, download_path: str = "./downloads"):
         super().__init__(download_path)
@@ -148,6 +170,25 @@ class WebDownloader(YouTubeDownloader):
 # Global downloader instance
 downloader = WebDownloader()
 
+# Security helper functions
+def validate_safe_path(requested_path: str, base_dir: Path) -> Optional[Path]:
+    """
+    Validate that requested_path is safely within base_dir.
+    Returns resolved Path if safe, None otherwise.
+    Prevents path traversal attacks.
+    """
+    try:
+        # Resolve both paths to absolute paths
+        base_resolved = base_dir.resolve()
+        requested_resolved = (base_dir / requested_path).resolve()
+        
+        # Check if requested path is within base directory
+        requested_resolved.relative_to(base_resolved)
+        
+        return requested_resolved
+    except (ValueError, Exception):
+        return None
+
 # Cancel download endpoint
 @app.route('/api/cancel_download', methods=['POST'])
 def cancel_download():
@@ -189,7 +230,10 @@ def get_video_info():
             resp = make_response(json.dumps({'error': 'URL cannot be empty'}), 400)
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
             return resp
-        
+
+        # Allow client to request insecure SSL (skip certificate verification)
+        insecure_ssl = bool(data.get('insecure_ssl')) if data else False
+
         # Use threading instead of signal for cross-platform timeout
         info_result = [None]
         error_result = [None]
@@ -197,7 +241,13 @@ def get_video_info():
         def get_info_thread():
             try:
                 print(f"[DEBUG] Getting video info for URL: {url}")
-                info_result[0] = downloader.get_video_info(url)
+                # Temporarily set insecure flag for this downloader
+                prev_insecure = getattr(downloader, 'insecure_ssl', False)
+                try:
+                    downloader.insecure_ssl = insecure_ssl
+                    info_result[0] = downloader.get_video_info(url)
+                finally:
+                    downloader.insecure_ssl = prev_insecure
                 print(f"[DEBUG] Video info retrieved successfully")
             except Exception as e:
                 print(f"[DEBUG] Error in get_info_thread: {e}")
@@ -238,6 +288,9 @@ def get_video_info():
         # Track actual resolutions found to avoid duplicates
         found_resolutions = set()
         
+        # Track available audio languages
+        audio_languages = {}  # {language_code: language_name}
+        
         for fmt in formats:
             height = fmt.get('height')
             if height and isinstance(height, int):
@@ -266,10 +319,18 @@ def get_video_info():
                 elif height >= 100:  # 144p range
                     qualities.add('144p')
                     found_resolutions.add(144)
+            
+            # Extract audio language information
+            if fmt.get('acodec') and fmt.get('acodec') != 'none':
+                lang_code = fmt.get('language') or fmt.get('lang') or 'unknown'
+                lang_name = fmt.get('language_name') or lang_code
+                if lang_code and lang_code != 'unknown':
+                    audio_languages[lang_code] = lang_name
         
         # Debug: Print found resolutions and formats for troubleshooting
         print(f"DEBUG: Found resolutions: {sorted(found_resolutions, reverse=True)}")
         print(f"DEBUG: Available qualities: {sorted(qualities, key=lambda x: {'4K': 2160, '1440p': 1440, '1080p': 1080, '720p': 720, '480p': 480, '360p': 360, '240p': 240, '144p': 144}.get(x, 0), reverse=True)}")
+        print(f"DEBUG: Available audio languages: {audio_languages}")
         
         # Sort qualities by resolution
         quality_order = {'4K': 2160, '1440p': 1440, '1080p': 1080, '720p': 720, '480p': 480, '360p': 360, '240p': 240, '144p': 144}
@@ -278,6 +339,13 @@ def get_video_info():
             key=lambda x: quality_order.get(x, 0), 
             reverse=True
         )
+        
+        # Add available audio languages to response
+        video_info['available_audio_languages'] = [
+            {'code': code, 'name': name} 
+            for code, name in sorted(audio_languages.items())
+        ]
+        
         # Debug: Show available formats for troubleshooting
         debug_info = downloader.debug_available_formats(url)
         
@@ -298,35 +366,52 @@ def start_download():
             resp = make_response(json.dumps({'error': 'URL is required'}), 400)
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
             return resp
-        url = data['url']
-        if not url:
-            resp = make_response(json.dumps({'error': 'URL is required'}), 400)
-            resp.headers['Content-Type'] = 'application/json; charset=utf-8'
-            return resp
-        url = url.strip()
-        quality = data.get('quality', 'best')
-        audio_only = data.get('audio_only', False)
-        output_name = data.get('output_name') or ''
-        output_name = output_name.strip() if output_name else None
-        print(f"[DEBUG] Received output_name for download: {output_name}")
+
+        url = (data.get('url') or '').strip()
         if not url:
             resp = make_response(json.dumps({'error': 'URL cannot be empty'}), 400)
             resp.headers['Content-Type'] = 'application/json; charset=utf-8'
             return resp
-        # Generate unique download ID
+
+        quality = data.get('quality', 'best')
+        audio_only = data.get('audio_only', False)
+        audio_language = data.get('audio_language')
+        output_name = (data.get('output_name') or '').strip() or None
+        insecure_ssl = bool(data.get('insecure_ssl'))
+
+        print(f"[DEBUG] Received output_name for download: {output_name}")
+        print(f"[DEBUG] Received audio_language for download: {audio_language}")
+
         download_id = str(uuid.uuid4())
-        # Start download in background thread
+
         def download_task():
+            prev_insecure = getattr(downloader, 'insecure_ssl', False)
             try:
-                # Store audio_only flag for progress reporting
+                downloader.insecure_ssl = insecure_ssl
                 downloader.audio_only = audio_only
+                downloader.audio_language = audio_language
                 downloader.set_download_id(download_id)
-                # Add quality limitation tracking
+
                 if download_id in active_downloads:
-                    active_downloads[download_id]['requested_quality'] = quality
-                    # Check merging capability and add notice
+                    state = active_downloads[download_id]
+                    state['requested_quality'] = quality
+                    state['insecure_ssl'] = insecure_ssl
+
+                    notices = state.get('download_notice')
+                    if insecure_ssl:
+                        warning = 'SSL verification disabled for this download.'
+                        notices = f"{notices} {warning}".strip() if notices else warning
+
                     if not downloader.merger.ffmpeg_available and quality.lower() not in ['360p', 'best']:
-                        active_downloads[download_id]['download_notice'] = f'Requested {quality}, but only 360p available due to no FFmpeg. Install FFmpeg for higher quality downloads.'
+                        extra_notice = (
+                            f'Requested {quality}, but only 360p available due to no FFmpeg. '
+                            'Install FFmpeg for higher quality downloads.'
+                        )
+                        notices = f"{notices} {extra_notice}".strip() if notices else extra_notice
+
+                    if notices:
+                        state['download_notice'] = notices
+
                 success = downloader.download_video(url, quality, audio_only, output_name)
                 if not success and download_id in active_downloads:
                     active_downloads[download_id]['status'] = 'error'
@@ -335,10 +420,13 @@ def start_download():
                 if download_id in active_downloads:
                     active_downloads[download_id]['status'] = 'error'
                     active_downloads[download_id]['error'] = str(e)
-        # Start thread with daemon flag for cleanup
+            finally:
+                downloader.insecure_ssl = prev_insecure
+
         thread = threading.Thread(target=download_task, daemon=True)
         thread.start()
-        resp = make_response(json.dumps({'download_id': download_id}), 200)
+
+        resp = make_response(json.dumps({'download_id': download_id, 'insecure_ssl': insecure_ssl}), 200)
         resp.headers['Content-Type'] = 'application/json; charset=utf-8'
         return resp
     except Exception as e:
@@ -346,151 +434,171 @@ def start_download():
         resp.headers['Content-Type'] = 'application/json; charset=utf-8'
         return resp
 
+
 @app.route('/api/progress/<download_id>')
 def get_progress(download_id: str):
     """Get download progress efficiently."""
-    if download_id in active_downloads:
-        resp = make_response(json.dumps(active_downloads[download_id]), 200)
-        resp.headers['Content-Type'] = 'application/json; charset=utf-8'
-        return resp
-    elif download_id in completed_downloads:
-        resp = make_response(json.dumps(completed_downloads[download_id]), 200)
-        resp.headers['Content-Type'] = 'application/json; charset=utf-8'
-        return resp
-    else:
-        resp = make_response(json.dumps({'error': 'Download not found'}), 404)
-        resp.headers['Content-Type'] = 'application/json; charset=utf-8'
-        return resp
-
-@app.route('/api/downloads')
-def list_downloads():
-    """List all downloads efficiently."""
-    # Combine and limit downloads for performance
-    all_downloads = {}
-    # Add recent completed downloads (limit to last 10)
-    recent_completed = dict(list(completed_downloads.items())[-10:])
-    all_downloads.update(recent_completed)
-    all_downloads.update(active_downloads)
-    resp = make_response(json.dumps(all_downloads), 200)
-    resp.headers['Content-Type'] = 'application/json; charset=utf-8'
-    return resp
-
-@app.route('/api/files')
-def list_files():
-    """List available files in downloads directory (for debugging)."""
     try:
-        downloads_dir = Path('./downloads')
-        if not downloads_dir.exists():
-            return jsonify({'files': []})
-        
-        files = []
-        for file_path in downloads_dir.glob('*'):
-            if file_path.is_file():
-                files.append({
-                    'name': file_path.name,
-                    'size': file_path.stat().st_size,
-                    'modified': file_path.stat().st_mtime
-                })
-        
-        return jsonify({'files': files})
+        if download_id in active_downloads:
+            progress = active_downloads[download_id].copy()
+        elif download_id in completed_downloads:
+            progress = completed_downloads[download_id].copy()
+        else:
+            return jsonify({'error': 'Download not found'}), 404
+
+        progress.setdefault('download_id', download_id)
+        return jsonify(progress)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Progress error: {str(e)}'}), 500
 
-@app.route('/download/<download_id>', methods=['GET', 'HEAD'])
+
+@app.route('/api/download/<download_id>/file', methods=['GET', 'HEAD', 'OPTIONS'])
 def download_file(download_id: str):
-    """Download completed file with error handling and fallback to direct file serving."""
+    """Download completed file by ID."""
     try:
-        # Handle HEAD request - just check if file exists
-        if request.method == 'HEAD':
-            if download_id in completed_downloads:
-                file_info = completed_downloads[download_id]
-                file_path = file_info.get('file_path')
-                if file_path and os.path.exists(file_path):
-                    return '', 200
-            
-            # Fallback: Check if file exists in downloads directory
-            downloads_dir = Path('./downloads')
-            if downloads_dir.exists():
-                for file_path in downloads_dir.glob('*'):
-                    if file_path.is_file():
-                        return '', 200
-            
-            return '', 404
-        
-        # Handle GET request - actual file download
-        if download_id in completed_downloads:
-            file_info = completed_downloads[download_id]
-            file_path = file_info.get('file_path')
-            if file_path and os.path.exists(file_path):
+        if request.method == 'OPTIONS':
+            response = make_response('', 204)
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return response
+
+        file_info = completed_downloads.get(download_id) or active_downloads.get(download_id)
+        file_path = file_info.get('file_path') if file_info else None
+
+        # If file_path is present but missing on disk, or not provided at all,
+        # try to map the download id / filename to an actual file in the downloads directory.
+        downloads_dir = Path('./downloads').resolve()
+        def persist_found_path(found_path: Path):
+            nonlocal file_path, file_info
+            file_path = str(found_path)
+            # Persist for future requests
+            try:
+                if download_id in completed_downloads:
+                    completed_downloads[download_id]['file_path'] = file_path
+                elif download_id in active_downloads:
+                    active_downloads[download_id]['file_path'] = file_path
+            except Exception:
+                pass
+
+        if file_path:
+            try:
+                p = Path(file_path).resolve()
+                # Ensure it's inside our downloads dir
                 try:
-                    filename = os.path.basename(file_path)
-                    # Ensure filename is properly encoded
-                    if isinstance(filename, bytes):
-                        filename = filename.decode('utf-8', errors='ignore')
-                    
-                    try:
-                        # Try newer Flask version parameter first
-                        response = send_file(file_path, as_attachment=True, download_name=filename)
-                    except TypeError:
-                        # Fallback to older Flask version parameter
-                        response = send_file(file_path, as_attachment=True, attachment_filename=filename)
-                    
-                    # Add notice header if present
-                    notice = file_info.get('download_notice')
-                    if notice:
-                        response.headers['X-Download-Notice'] = notice
-                    
-                    # Add security headers
-                    response.headers['X-Content-Type-Options'] = 'nosniff'
-                    response.headers['X-Frame-Options'] = 'DENY'
-                    response.headers['Referrer-Policy'] = 'no-referrer'
-                    # Add CORS headers for better compatibility
-                    response.headers['Access-Control-Allow-Origin'] = '*'
-                    response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-                    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-                    
-                    return response
-                except Exception as e:
-                    print(f"Download error for {download_id}: {str(e)}")
-                    return jsonify({'error': f'Download error: {str(e)}'}), 500
-        
-        # Fallback: Try to find file in downloads directory by matching filename pattern
-        # This helps when server restarts but files still exist
+                    p.relative_to(downloads_dir)
+                except ValueError:
+                    # Not inside downloads dir - treat as missing for safety
+                    p = None
+                if not p or not p.exists():
+                    file_path = None
+                else:
+                    file_path = str(p)
+            except Exception:
+                file_path = None
+
+        # Try to locate by filename or download id if we don't have a valid file_path yet
+        if (not file_path) and downloads_dir.exists():
+            expected_names = set()
+            if file_info:
+                name = file_info.get('filename')
+                if name:
+                    expected_names.add(name)
+                    expected_names.add(name.lower())
+
+            # Walk the downloads directory for a best match
+            for candidate in downloads_dir.glob('*'):
+                if not candidate.is_file():
+                    continue
+
+                candidate_name = candidate.name
+                match = False
+                if expected_names:
+                    if candidate_name in expected_names or candidate_name.lower() in expected_names:
+                        match = True
+                else:
+                    if download_id in candidate_name:
+                        match = True
+
+                # Also accept case-insensitive or partial matches if nothing exact found
+                if not match and expected_names:
+                    for en in expected_names:
+                        if en and (en in candidate_name or candidate_name in en or candidate_name.lower() == en.lower()):
+                            match = True
+                            break
+
+                if match:
+                    persist_found_path(candidate.resolve())
+                    break
+
+        if file_path and os.path.exists(file_path):
+            if request.method == 'HEAD':
+                response = make_response('', 200)
+            else:
+                filename = os.path.basename(file_path)
+                if isinstance(filename, bytes):
+                    filename = filename.decode('utf-8', errors='ignore')
+                try:
+                    response = send_file(file_path, as_attachment=True, download_name=filename)
+                except TypeError:
+                    response = send_file(file_path, as_attachment=True, attachment_filename=filename)
+
+            notice = file_info.get('download_notice') if file_info else None
+            if notice:
+                response.headers['X-Download-Notice'] = notice
+
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            response.headers['X-Frame-Options'] = 'DENY'
+            response.headers['Referrer-Policy'] = 'no-referrer'
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            return response
+
         downloads_dir = Path('./downloads')
         if downloads_dir.exists():
-            # Look for any file that might match the download_id pattern
-            for file_path in downloads_dir.glob('*'):
-                if file_path.is_file():
+            expected_names = set()
+            if file_info:
+                name = file_info.get('filename')
+                if name:
+                    expected_names.add(name)
+                    expected_names.add(name.lower())
+            for candidate in downloads_dir.glob('*'):
+                if not candidate.is_file():
+                    continue
+
+                candidate_name = candidate.name
+                if expected_names and candidate_name not in expected_names and candidate_name.lower() not in expected_names:
+                    continue
+
+                if not expected_names and download_id not in candidate_name:
+                    continue
+
+                if request.method == 'HEAD':
+                    response = make_response('', 200)
+                else:
+                    filename = candidate_name
+                    if isinstance(filename, bytes):
+                        filename = filename.decode('utf-8', errors='ignore')
                     try:
-                        filename = file_path.name
-                        # Ensure filename is properly encoded
-                        if isinstance(filename, bytes):
-                            filename = filename.decode('utf-8', errors='ignore')
-                        
-                        try:
-                            response = send_file(str(file_path), as_attachment=True, download_name=filename)
-                        except TypeError:
-                            response = send_file(str(file_path), as_attachment=True, attachment_filename=filename)
-                        
-                        response.headers['X-Content-Type-Options'] = 'nosniff'
-                        response.headers['X-Frame-Options'] = 'DENY'
-                        response.headers['Referrer-Policy'] = 'no-referrer'
-                        response.headers['Access-Control-Allow-Origin'] = '*'
-                        response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
-                        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-                        # Add a header to indicate this was a fallback
-                        response.headers['X-Fallback-Download'] = 'true'
-                        return response
-                    except Exception as e:
-                        print(f"Fallback download error for {file_path}: {str(e)}")
-                        continue
-        
-        # No file found
+                        response = send_file(str(candidate), as_attachment=True, download_name=filename)
+                    except TypeError:
+                        response = send_file(str(candidate), as_attachment=True, attachment_filename=filename)
+
+                response.headers['X-Content-Type-Options'] = 'nosniff'
+                response.headers['X-Frame-Options'] = 'DENY'
+                response.headers['Referrer-Policy'] = 'no-referrer'
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                response.headers['X-Fallback-Download'] = 'true'
+                return response
+
         return jsonify({'error': 'File not found or no longer available'}), 404
-    
     except Exception as e:
-        print(f"General download error for {download_id}: {str(e)}")
+        print(f"Download error for {download_id}: {str(e)}")
         return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
 
 @app.route('/download_by_filename/<path:filename>', methods=['GET', 'HEAD'])
 def download_by_filename(filename: str):
@@ -498,6 +606,7 @@ def download_by_filename(filename: str):
     try:
         # Sanitize filename to prevent directory traversal
         safe_filename = os.path.basename(filename)
+        
         # Handle URL encoding/decoding
         try:
             from urllib.parse import unquote
@@ -505,13 +614,20 @@ def download_by_filename(filename: str):
         except Exception:
             pass
         
-        file_path = Path('./downloads') / safe_filename
+        # Validate filename doesn't contain path separators
+        if os.path.sep in safe_filename or (os.path.altsep and os.path.altsep in safe_filename):
+            return jsonify({'error': 'Invalid filename'}), 400
         
-        # Also try to find files that might match closely
-        if not file_path.exists():
-            downloads_dir = Path('./downloads')
+        # Additional validation - reject suspicious patterns
+        if '..' in safe_filename or safe_filename.startswith('.'):
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        downloads_dir = Path('./downloads').resolve()
+        file_path = validate_safe_path(safe_filename, downloads_dir)
+        
+        if not file_path or not file_path.exists() or not file_path.is_file():
+            # Try to find files that might match closely
             if downloads_dir.exists():
-                # Try to find a file that matches the filename pattern
                 for existing_file in downloads_dir.glob('*'):
                     if existing_file.is_file():
                         existing_name = existing_file.name
@@ -528,8 +644,14 @@ def download_by_filename(filename: str):
                             file_path = existing_file
                             break
         
-        if not file_path.exists() or not file_path.is_file():
+        if not file_path or not file_path.exists() or not file_path.is_file():
             return jsonify({'error': 'File not found'}), 404 if request.method == 'GET' else ('', 404)
+        
+        # Double-check the file is still within downloads directory
+        try:
+            file_path.relative_to(downloads_dir)
+        except ValueError:
+            return jsonify({'error': 'Access denied'}), 403
         
         # Handle HEAD request - just check if file exists
         if request.method == 'HEAD':
@@ -567,6 +689,55 @@ def download_by_filename(filename: str):
         print(f"General error in download_by_filename for {filename}: {str(e)}")
         return jsonify({'error': f'Download error: {str(e)}'}), 500
 
+@app.route('/api/open_file', methods=['POST'])
+def open_file():
+    """Open a downloaded file locally using the system default video player."""
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        file_path = data.get('file_path') or data.get('filePath')
+        if not file_path:
+            return jsonify({'error': 'file_path is required'}), 400
+        
+        # Sanitize and validate path
+        downloads_dir = Path('./downloads').resolve()
+        
+        # Handle both absolute and relative paths
+        if os.path.isabs(file_path):
+            target_path = Path(file_path).resolve()
+        else:
+            target_path = (downloads_dir / file_path).resolve()
+        
+        # Validate path is within downloads directory (prevent path traversal)
+        try:
+            target_path.relative_to(downloads_dir)
+        except ValueError:
+            print(f"Security: Attempted access outside downloads directory: {file_path}")
+            return jsonify({'error': 'File outside downloads directory is not allowed'}), 403
+
+        if not target_path.exists() or not target_path.is_file():
+            return jsonify({'error': 'File not found'}), 404
+
+        system = platform.system()
+        try:
+            if system == 'Windows':
+                os.startfile(str(target_path))  # type: ignore[attr-defined]
+            elif system == 'Darwin':
+                subprocess.Popen(['open', str(target_path)])
+            else:  # Linux and other Unix-like systems
+                subprocess.Popen(['xdg-open', str(target_path)])
+        except Exception as open_err:
+            print(f"Error opening file: {open_err}")
+            return jsonify({'error': f'Unable to open file: {open_err}'}), 500
+
+        return jsonify({'status': 'opened', 'file': target_path.name})
+
+    except Exception as e:
+        print(f"Unexpected error in open_file: {str(e)}")
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
 @app.route('/api/debug_formats', methods=['POST'])
 def debug_formats():
     """Debug endpoint to show available formats for a video."""
@@ -603,6 +774,39 @@ def internal_error(error):
     resp.headers['Content-Type'] = 'application/json; charset=utf-8'
     return resp
 
+
+@app.route('/api/completed_downloads', methods=['GET'])
+def list_completed_downloads():
+    """Return a JSON list of completed downloads. Secured with a token.
+
+    Use environment variable DOWNLOADS_API_TOKEN or app.config['DOWNLOADS_API_TOKEN']
+    to protect this endpoint.
+    """
+    try:
+        token = os.environ.get('DOWNLOADS_API_TOKEN') or app.config.get('DOWNLOADS_API_TOKEN')
+        if token:
+            req_token = request.headers.get('X-API-Token') or request.args.get('token')
+            if not req_token or req_token != token:
+                return jsonify({'error': 'Unauthorized'}), 401
+
+        # Build a minimal safe listing
+        results = []
+        for did, info in completed_downloads.items():
+            results.append({
+                'download_id': did,
+                'filename': info.get('filename'),
+                'file_path': info.get('file_path'),
+                'status': info.get('status', 'completed'),
+                'downloaded_bytes': info.get('downloaded_bytes'),
+                'total_bytes': info.get('total_bytes'),
+                'timestamp': info.get('started_at') or info.get('timestamp')
+            })
+
+        return jsonify({'completed': results}), 200
+    except Exception as e:
+        print(f'Error listing completed downloads: {e}')
+        return jsonify({'error': f'Internal error: {e}'}), 500
+
 @app.after_request
 def add_security_headers(response):
     # Add security and cache headers for all responses
@@ -633,8 +837,8 @@ if __name__ == '__main__':
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     
     print("╔" + "═" * 60 + "╗")
-    print("║" + " " * 18 + "YouTube Downloader" + " " * 24 + "║")
-    print("║" + " " * 15 + "Cross-Platform Edition" + " " * 23 + "║")
+    print("║" + " " * 16 + "YouTube Downloader" + " " * 17 + "║")
+    print("║" + " " * 19 + "Cross-Platform Edition" + " " * 19 + "║")
     print("╚" + "═" * 60 + "╝")
     print()
     # Print platform icon and info
@@ -650,11 +854,39 @@ if __name__ == '__main__':
     print("🚀 Starting YouTube Downloader Web Interface...")
     print("📱 Open your browser and go to: http://localhost:5005")
     print("🛑 Press Ctrl+C to stop the server")
+    print("🔁 Press Ctrl+R to restart the server")
     
     try:
         # Try to use production server (Waitress)
         from waitress import serve
         print("\U0001f3ed Using production server (Waitress)")
+
+        # Start a background thread to watch for Ctrl+R in console (Windows)
+        def restart_watcher():
+            try:
+                if os.name == 'nt':
+                    import msvcrt
+                    while True:
+                        if msvcrt.kbhit():
+                            ch = msvcrt.getch()
+                            # Ctrl+R sends ASCII 18 (0x12)
+                            if ch == b'\x12':
+                                print('\n[INFO] Ctrl+R detected — restarting server...')
+                                time.sleep(0.2)
+                                os.execv(sys.executable, [sys.executable] + sys.argv)
+                        time.sleep(0.1)
+                else:
+                    # For POSIX, listen for SIGUSR1 as restart signal
+                    import signal
+                    def _handler(signum, frame):
+                        print('\n[INFO] Restart signal received — restarting server...')
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+                    signal.signal(signal.SIGUSR1, _handler)
+            except Exception as e:
+                print(f'[WARN] restart_watcher error: {e}')
+
+        watcher = threading.Thread(target=restart_watcher, daemon=True)
+        watcher.start()
         serve(app, host='0.0.0.0', port=5005, threads=6)
     except ImportError:
         # Fallback to Flask development server with optimized settings

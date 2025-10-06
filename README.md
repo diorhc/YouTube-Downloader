@@ -37,14 +37,15 @@ $Shortcut.Save()
 Write-Host "Shortcut created on Desktop: YouTube Downloader.lnk"
 
 # Start application
-start launcher.bat
-# Choose 3. Setup Dependencies
-# Choose 1. Start Web Interface
+"2`n1" | cmd /c launcher.bat
+
 ```
 
 ### 🐧 Linux / 🍎 macOS
 ```bash
 # Clone repository
+sudo apt update
+sudo apt install -y git curl
 git clone https://github.com/diorhc/YouTube-Downloader.git
 cd YouTube-Downloader
 

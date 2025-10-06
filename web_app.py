@@ -835,11 +835,6 @@ if __name__ == '__main__':
     # Platform information
     system_info = f"{platform.system()} {platform.release()}"
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    
-    print("╔" + "═" * 60 + "╗")
-    print("║" + " " * 16 + "YouTube Downloader" + " " * 17 + "║")
-    print("║" + " " * 19 + "Cross-Platform Edition" + " " * 19 + "║")
-    print("╚" + "═" * 60 + "╝")
     print()
     # Print platform icon and info
     platform_icons = {

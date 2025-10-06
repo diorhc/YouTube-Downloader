@@ -45,16 +45,19 @@ start launcher.bat
 ### 🐧 Linux / 🍎 macOS
 ```bash
 # Clone repository
-sudo apt install git -y
 git clone https://github.com/diorhc/YouTube-Downloader.git
 cd YouTube-Downloader
 
-# Start application
-bash launcher.sh
-# Choose 3. Setup Dependencies
-# Choose 1. Start Web Interface
+# Make launcher executable
+chmod +x launcher.sh
 
+# Start application
+./launcher.sh
+# Choose option 2 (Setup / Install Dependencies)
+# Choose option 1 (Launch Web Interface)
 ```
+
+**📖 See [README_UNIX.md](README_UNIX.md) for detailed Mac/Linux installation guide**
 
 ### 🌐 Web Interface Usage
 
@@ -108,13 +111,16 @@ YouTube Downloader/
 ├── web_app.py                # Flask web application
 ├── test_quality_fix.py       # Quality detection
 ├── launcher.bat              # Windows launcher
-├── launcher.sh               # MacOS/Linux launcher
+├── launcher.sh               # Mac/Linux launcher (chmod +x required)
 ├── requirements.txt          # Python dependencies
 ├── LICENSE                   # MIT license
-├── README.md                 # This file
+├── README.md                 # Main documentation
+├── README_UNIX.md            # Mac/Linux installation guide
 │
 ├── templates/
 │   └── index.html            # Web interface template
+│
+└── downloads/                # Downloaded videos (auto-created)
 ```
 
 ## 🛠️ Configuration

@@ -1,353 +1,343 @@
 #!/bin/bash
 
+# YouTube Downloader Launcher for Mac/Linux
+# This script provides a menu-driven interface for downloading YouTube videos
+
+set -e
+
 # === CONFIGURABLE VARIABLES ===
-PYDIR="python_embedded"
-PYEXE="$PYDIR/bin/python3"
-PYPTH="$PYDIR/pyvenv.cfg"
-PIP="$PYDIR/bin/pip3"
-FFMPEG="$PYDIR/bin/ffmpeg"
-BORDER="╔════════════════════════════════════════════════════════════╗"
-END="╚════════════════════════════════════════════════════════════╝"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Detect OS
-OS=$(uname -s)
-ARCH=$(uname -m)
+PYTHON_CMD=""
+PIP_CMD=""
+FFMPEG_CMD=""
 
-# Set Python version and download URLs based on OS
-PYTHON_VERSION="3.13.5"
-case "$OS" in
-    "Darwin")
-        PLATFORM="macOS"
-        if [[ "$ARCH" == "arm64" ]]; then
-            PYTHON_URL="https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-macos11.pkg"
-            FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/zip"
-        else
-            PYTHON_URL="https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-macos11.pkg"
-            FFMPEG_URL="https://evermeet.cx/ffmpeg/getrelease/zip"
-        fi
-        ;;
-    "Linux")
-        PLATFORM="Linux"
-        PYTHON_URL="https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSION.tgz"
-        if [[ "$ARCH" == "x86_64" ]]; then
-            FFMPEG_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
-        else
-            FFMPEG_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
-        fi
-        ;;
-    *)
-        echo "Unsupported operating system: $OS"
-        exit 1
-        ;;
-esac
+# === COLOR CODES ===
+RESET='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
 
 # === UTILITY FUNCTIONS ===
+
 print_header() {
     clear
-    echo
-    echo "$BORDER"
-    echo "║              YOUTUBE DOWNLOADER LAUNCHER                   ║"
-    echo "║        Cross-Platform Edition   (Platform: $PLATFORM)        ║"
-    echo "║  For Windows: launcher.bat or python launcher.py          ║"
-    echo "$END"
-    echo
+    echo -e "${CYAN}${BOLD}"
+    echo "╔═══════════════════════════════════════════════════════════════════╗"
+    echo "║                                                                   ║"
+    echo "║              🎬 YOUTUBE DOWNLOADER LAUNCHER 🎬                   ║"
+    echo "║                                                                   ║"
+    echo "╚═══════════════════════════════════════════════════════════════════╝"
+    echo -e "${RESET}"
+}
+
+print_animated_header() {
+    print_header
 }
 
 print_menu() {
-    echo "║  1. Start Web Interface                                    ║"
-    echo "║  2. Command Line Help                                      ║"
-    echo "║  3. Setup Dependencies                                     ║"
-    echo "║  4. Exit                                                   ║"
-    echo "$END"
-    echo
+    echo -e "${BLUE}${BOLD}"
+    echo "╔═══════════════════════════════════════════════════════════════════╗"
+    echo "║                         MAIN MENU                                 ║"
+    echo "╠═══════════════════════════════════════════════════════════════════╣"
+    echo "║                                                                   ║"
+    echo "║  ${GREEN}1${BLUE}) 🌐 Launch Web Interface                                   ║"
+    echo "║                                                                   ║"
+    echo "║  ${GREEN}2${BLUE}) ⚙️  Setup / Install Dependencies                          ║"
+    echo "║                                                                   ║"
+    echo "║  ${GREEN}3${BLUE}) 🔄 Update Dependencies                                    ║"
+    echo "║                                                                   ║"
+    echo "║  ${GREEN}4${BLUE}) 🚪 Exit                                                   ║"
+    echo "║                                                                   ║"
+    echo "╚═══════════════════════════════════════════════════════════════════╝"
+    echo -e "${RESET}"
 }
 
 print_section() {
-    local msg="$1"
-    echo "║  $msg"
-    echo "╠════════════════════════════════════════════════════════════╣"
-}
-
-print_success() {
-    local msg="$1"
-    echo "  [SUCCESS] $msg"
-}
-
-print_error() {
-    local msg="$1"
-    echo "  [ERROR] $msg"
+    echo -e "${CYAN}${BOLD}═══ $1 ═══${RESET}"
 }
 
 print_info() {
-    local msg="$1"
-    echo "  [INFO] $msg"
+    echo -e "${BLUE}[INFO]${RESET} $1"
 }
 
-# === PYTHON RUNNER FUNCTION ===
-run_python() {
-    if [[ -x "$PYEXE" ]]; then
-        print_success "Using embedded Python"
-        "$PYEXE" "$@"
-    elif command -v python3 &> /dev/null; then
-        print_success "Using system Python3"
-        python3 "$@"
-    elif command -v python &> /dev/null; then
-        print_success "Using system Python"
-        python "$@"
-    else
-        print_error "Python not found! Please install Python or run setup."
-        print_info "Install from: https://python.org"
-        read -p "Press Enter to continue..."
-        return 1
-    fi
+print_success() {
+    echo -e "${GREEN}[✓]${RESET} $1"
 }
 
-# === SETUP FUNCTIONS ===
-setup_python_venv() {
-    if [[ ! -x "$PYEXE" ]]; then
-        print_info "Creating Python virtual environment..."
-        
-        # Check if python3-venv is available on Debian/Ubuntu systems
-        if command -v apt &> /dev/null; then
-            if ! python3 -c "import venv" &> /dev/null; then
-                print_error "Python venv module not found."
-                print_info "On Debian/Ubuntu, install with: sudo apt install python3-venv"
-                print_info "Or try: sudo apt install python3.10-venv python3.11-venv python3.12-venv"
-                return 1
-            fi
-        fi
-        
-        # Use system Python to create virtual environment
-        if command -v python3 &> /dev/null; then
-            python3 -m venv "$PYDIR"
-        elif command -v python &> /dev/null; then
-            python -m venv "$PYDIR"
-        else
-            print_error "No Python found on system. Please install Python first."
-            return 1
-        fi
-        
-        if [[ -x "$PYEXE" ]]; then
-            print_success "Python virtual environment created."
-        else
-            print_error "Failed to create Python virtual environment."
-            print_info "The virtual environment directory exists but Python executable is missing."
-            print_info "Removing failed directory and try again."
-            rm -rf "$PYDIR"
-            return 1
-        fi
-    else
-        print_success "Python virtual environment already exists."
-    fi
-
-    # Ensure pip is installed
-    if ! "$PYEXE" -m pip --version &> /dev/null; then
-        print_info "pip not found, bootstrapping pip..."
-        
-        # Try to download get-pip.py
-        if command -v curl &> /dev/null; then
-            curl -O https://bootstrap.pypa.io/get-pip.py
-        elif command -v wget &> /dev/null; then
-            wget https://bootstrap.pypa.io/get-pip.py
-        else
-            print_error "curl or wget required to download pip. Please install one of them:"
-            print_info "sudo apt install curl"
-            print_info "or"
-            print_info "sudo apt install wget"
-            return 1
-        fi
-        
-        # Check if download was successful
-        if [[ -f "get-pip.py" ]]; then
-            "$PYEXE" get-pip.py
-            if [[ $? -eq 0 ]]; then
-                print_success "pip installed successfully."
-                rm -f get-pip.py
-            else
-                print_error "Failed to install pip."
-                rm -f get-pip.py
-                return 1
-            fi
-        else
-            print_error "Failed to download get-pip.py"
-            return 1
-        fi
-    fi
-
-    # Upgrade pip
-    if "$PYEXE" -m pip --version &> /dev/null; then
-        print_info "Upgrading pip..."
-        "$PYEXE" -m pip install --upgrade pip
-    else
-        print_error "pip still not available after installation attempt."
-        return 1
-    fi
-
-    return 0
+print_error() {
+    echo -e "${RED}[✗]${RESET} $1"
 }
 
-setup_ffmpeg() {
-    if [[ ! -x "$FFMPEG" ]]; then
-        print_info "Installing FFmpeg..."
-        
-        case "$OS" in
-        "Darwin")
-            if command -v brew &> /dev/null; then
-                print_info "Installing FFmpeg with Homebrew..."
-                brew install ffmpeg
-            else
-                print_error "Homebrew not found. Install it from https://brew.sh/"
-            fi
+print_warning() {
+    echo -e "${YELLOW}[!]${RESET} $1"
+}
+
+# === DETECT SYSTEM ===
+
+detect_system() {
+    OS_TYPE=$(uname -s)
+    case "$OS_TYPE" in
+        Darwin*)
+            SYSTEM="macOS"
             ;;
-        "Linux")
-            if command -v apt &> /dev/null; then
-                print_info "Installing FFmpeg with apt..."
-                sudo apt update && sudo apt install -y ffmpeg
-            else
-                print_error "apt not found. Please install FFmpeg manually for your distribution."
-            fi
+        Linux*)
+            SYSTEM="Linux"
             ;;
         *)
-            print_error "Unsupported OS for automatic FFmpeg installation."
+            SYSTEM="Unknown"
             ;;
     esac
-    else
-        print_success "FFmpeg already present."
-    fi
-    
-    return 0
 }
 
-install_requirements() {
-    if [[ -f "requirements.txt" ]]; then
-        print_info "Installing Python requirements..."
-        run_python -m pip install -r requirements.txt
-        return $?
+# === FIND PYTHON ===
+
+find_python() {
+    # Try to find Python 3
+    if command -v python3 &>/dev/null; then
+        PYTHON_CMD="python3"
+    elif command -v python &>/dev/null; then
+        # Check if it's Python 3
+        py_version=$($PYTHON_CMD --version 2>&1 | grep -oP '(?<=Python )\d')
+        if [ "$py_version" = "3" ]; then
+            PYTHON_CMD="python"
+        else
+            PYTHON_CMD=""
+        fi
     else
-        print_error "requirements.txt not found."
+        PYTHON_CMD=""
+    fi
+
+    if [ -n "$PYTHON_CMD" ]; then
+        PIP_CMD="$PYTHON_CMD -m pip"
+        return 0
+    else
         return 1
     fi
 }
 
-# === MAIN MENU FUNCTIONS ===
-web_interface() {
-    clear
-    print_header
-    print_section "Launching Web Interface..."
-    
-    # Check if Python is available
-    if ! run_python --version &> /dev/null; then
-        print_error "Python not available. Please run setup first."
-        read -p "Press Enter to continue..."
+# === CHECK DEPENDENCIES ===
+
+check_dependencies() {
+    local all_ok=true
+
+    print_section "Checking Dependencies"
+
+    # Check Python
+    if find_python; then
+        py_version=$($PYTHON_CMD --version 2>&1)
+        print_success "Python found: $py_version"
+    else
+        print_error "Python 3 not found!"
+        all_ok=false
+    fi
+
+    # Check pip
+    if [ -n "$PIP_CMD" ] && $PIP_CMD --version &>/dev/null; then
+        pip_version=$($PIP_CMD --version 2>&1 | head -n1)
+        print_success "pip found: $pip_version"
+    else
+        print_error "pip not found!"
+        all_ok=false
+    fi
+
+    # Check ffmpeg
+    if command -v ffmpeg &>/dev/null; then
+        ffmpeg_version=$(ffmpeg -version 2>&1 | head -n1)
+        print_success "ffmpeg found: $ffmpeg_version"
+        FFMPEG_CMD="ffmpeg"
+    else
+        print_warning "ffmpeg not found! Some features may not work."
+        print_info "Install with: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)"
+    fi
+
+    if [ "$all_ok" = false ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
+# === INSTALL DEPENDENCIES ===
+
+install_dependencies() {
+    print_section "Installing Python Dependencies"
+
+    if [ ! -f "requirements.txt" ]; then
+        print_error "requirements.txt not found!"
         return 1
     fi
-    
-    print_info "Starting web server on http://localhost:5005"
+
+    if [ -z "$PYTHON_CMD" ]; then
+        print_error "Python not found! Please install Python 3 first."
+        print_info "Visit https://www.python.org/downloads/"
+        return 1
+    fi
+
+    print_info "Installing packages from requirements.txt..."
+    $PIP_CMD install -r requirements.txt
+
+    if [ $? -eq 0 ]; then
+        print_success "Dependencies installed successfully!"
+        return 0
+    else
+        print_error "Failed to install dependencies!"
+        return 1
+    fi
+}
+
+# === UPDATE DEPENDENCIES ===
+
+update_dependencies() {
+    print_section "Checking for Dependency Updates"
+
+    if [ -z "$PYTHON_CMD" ]; then
+        print_error "Python not found! Please run Setup first."
+        return 1
+    fi
+
+    print_info "Checking for outdated packages..."
+    outdated=$($PIP_CMD list --outdated 2>/dev/null)
+
+    if [ -z "$outdated" ]; then
+        print_success "All packages are up to date!"
+    else
+        echo -e "\n${YELLOW}Outdated packages:${RESET}"
+        echo "$outdated"
+        echo ""
+        read -p "Do you want to update all packages? (y/n): " choice
+        if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+            print_info "Updating packages..."
+            $PIP_CMD install --upgrade -r requirements.txt
+            if [ $? -eq 0 ]; then
+                print_success "Packages updated successfully!"
+            else
+                print_error "Failed to update packages!"
+            fi
+        else
+            print_info "Update cancelled."
+        fi
+    fi
+}
+
+# === LAUNCH WEB APP ===
+
+launch_web() {
+    print_section "Launching Web Interface"
+
+    if [ -z "$PYTHON_CMD" ]; then
+        print_error "Python not found! Please run Setup first."
+        return 1
+    fi
+
+    if [ ! -f "web_app.py" ]; then
+        print_error "web_app.py not found!"
+        return 1
+    fi
+
+    print_info "Starting web server..."
+    print_success "Web interface will be available at: http://localhost:5005"
     
     # Open browser (platform-specific)
-    case "$OS" in
-        "Darwin")
-            open "http://localhost:5005" &
+    sleep 2
+    case "$SYSTEM" in
+        macOS)
+            open "http://localhost:5005" &>/dev/null &
             ;;
-        "Linux")
-            if command -v xdg-open &> /dev/null; then
-                xdg-open "http://localhost:5005" &
-            elif command -v gnome-open &> /dev/null; then
-                gnome-open "http://localhost:5005" &
+        Linux)
+            if command -v xdg-open &>/dev/null; then
+                xdg-open "http://localhost:5005" &>/dev/null &
+            elif command -v gnome-open &>/dev/null; then
+                gnome-open "http://localhost:5005" &>/dev/null &
             fi
             ;;
     esac
-    
-    run_python web_app.py
-    read -p "Press Enter to continue..."
+
+    echo ""
+    print_warning "Press Ctrl+C to stop the server and return to menu"
+    echo ""
+
+    $PYTHON_CMD web_app.py
 }
 
-cli_help() {
-    clear
-    print_header
-    print_section "Command Line Usage"
-    echo "║"
-    echo "║  python youtube_downloader.py \"VIDEO_URL\" [options]"
-    echo "║"
-    echo "║  Options:"
-    echo "║    -q, --quality     Video quality (best, 4k, 1080p, 720p, 480p, 360p)"
-    echo "║    -m, --mode        Download mode (auto, ultra, standard)"
-    echo "║    -o, --output      Output filename"
-    echo "║    --audio-only      Download audio only"
-    echo "║"
-    echo "║  Examples:"
-    echo "║    python youtube_downloader.py \"https://youtube.com/watch?v=dQw4w9WgXcQ\""
-    echo "║    python youtube_downloader.py \"URL\" -q 1080p -m ultra"
-    echo "║    python youtube_downloader.py \"URL\" --audio-only"
-    echo "║"
-    read -p "Press Enter to continue..."
+# === SETUP ===
+
+setup() {
+    print_animated_header
+    print_section "Setup / Installation"
+
+    detect_system
+    print_info "System detected: $SYSTEM"
+    echo ""
+
+    if ! check_dependencies; then
+        echo ""
+        print_warning "Some dependencies are missing!"
+        
+        if [ -z "$PYTHON_CMD" ]; then
+            print_error "Python 3 is required but not found."
+            case "$SYSTEM" in
+                macOS)
+                    print_info "Install with: brew install python3"
+                    print_info "Or download from: https://www.python.org/downloads/"
+                    ;;
+                Linux)
+                    print_info "Install with: sudo apt install python3 python3-pip (Debian/Ubuntu)"
+                    print_info "            or: sudo yum install python3 python3-pip (RedHat/CentOS)"
+                    ;;
+            esac
+            echo ""
+            read -p "Press Enter to return to menu..."
+            return 1
+        fi
+    fi
+
+    echo ""
+    if [ -f "requirements.txt" ]; then
+        read -p "Install/Update Python dependencies? (y/n): " choice
+        if [ "$choice" = "y" ] || [ "$choice" = "Y" ]; then
+            install_dependencies
+        fi
+    fi
+
+    echo ""
+    print_success "Setup complete!"
+    echo ""
+    read -p "Press Enter to return to menu..."
 }
 
-setup_dependencies() {
-    clear
-    print_header
-    print_section "Installing dependencies..."
-    
-    # Setup Python virtual environment
-    if ! setup_python_venv; then
-        print_error "Failed to setup Python environment."
-        read -p "Press Enter to continue..."
-        return 1
-    fi
-    
-    # Setup FFmpeg
-    if ! setup_ffmpeg; then
-        print_error "Failed to setup FFmpeg."
-        read -p "Press Enter to continue..."
-        return 1
-    fi
-    
-    # Install Python requirements
-    if ! install_requirements; then
-        print_error "Failed to install Python requirements."
-        read -p "Press Enter to continue..."
-        return 1
-    fi
-    
-    print_success "Setup completed successfully!"
-    read -p "Press Enter to continue..."
-}
+# === MAIN MENU ===
 
-cleanup() {
-    print_info "Cleaning up..."
-    if [[ -d "downloads" ]]; then
-        rm -rf "downloads"
-    fi
-}
-
-# === MAIN PROGRAM ===
-main() {
-    # Create downloads directory if it doesn't exist
-    mkdir -p downloads
-    
+main_menu() {
     while true; do
-        print_header
+        print_animated_header
         print_menu
-        
-        echo -n "║  Enter choice (1-4): "
-        read -r choice
-        
-        case "$choice" in
+
+        read -p "  Enter choice (1-4): " choice
+        echo ""
+
+        case $choice in
             1)
-                web_interface
+                launch_web
                 ;;
             2)
-                cli_help
+                setup
                 ;;
             3)
-                setup_dependencies
+                print_header
+                update_dependencies
+                echo ""
+                read -p "Press Enter to return to menu..."
                 ;;
             4)
-                clear
                 print_header
-                cleanup
-                echo "║  👋 Goodbye! Thank you for using YouTube Downloader.        ║"
-                echo "$END"
+                print_success "Thank you for using YouTube Downloader!"
+                echo ""
                 exit 0
                 ;;
             *)
@@ -358,8 +348,9 @@ main() {
     done
 }
 
-# Make sure we're in the script directory
-cd "$(dirname "$0")"
+# === ENTRY POINT ===
 
-# Run main program
-main "$@"
+detect_system
+find_python
+
+main_menu

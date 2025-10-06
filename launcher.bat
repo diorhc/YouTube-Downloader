@@ -8,8 +8,6 @@ set "PYEXE=%PYDIR%\python.exe"
 set "PYPTH=%PYDIR%\python313._pth"
 set "PIP=%PYDIR%\Scripts\pip.exe"
 set "FFMPEG=%PYDIR%\bin\ffmpeg.exe"
-set "BORDER=╔════════════════════════════════════════════════════════════╗"
-set "END=╚════════════════════════════════════════════════════════════╝"
 title YouTube Downloader
 
 REM === CHECK POWERSHELL ===
@@ -24,16 +22,14 @@ if errorlevel 1 (
 cls
 call :printAnimatedHeader
 call :printMenu
-echo ║  Select an option (1-5) and press ENTER.
 :choiceLoop
-choice /C 12345 /N /M "  ║  Enter choice (1-5): "
+choice /C 1234 /N /M "  ║  Enter choice (1-4): "
 set "choice=%errorlevel%"
 if "%choice%"=="1" goto web
-if "%choice%"=="2" goto cli
-if "%choice%"=="3" goto setup
-if "%choice%"=="4" goto update
-if "%choice%"=="5" goto exit
-call :printError "Invalid choice! Please enter a number from 1 to 5."
+if "%choice%"=="2" goto setup
+if "%choice%"=="3" goto update
+if "%choice%"=="4" goto exit
+call :printError "Invalid choice! Please enter a number from 1 to 4."
 goto choiceLoop
 
 :web
@@ -42,27 +38,6 @@ call :printHeader
 call :printSection "Launching Web Interface..."
 start "" http://localhost:5005
 call :runPython web_app.py
-pause
-goto mainmenu
-
-:cli
-cls
-call :printHeader
-call :printSection "Command Line Usage"
-echo ║
-echo ║  python youtube_downloader.py "VIDEO_URL" [options]
-echo ║
-echo ║  Options:
-echo ║    -q, --quality     Video quality (best, 4k, 1080p, 720p, 480p, 360p)
-echo ║    -m, --mode        Download mode (auto, ultra, standard)
-echo ║    -o, --output      Output filename
-echo ║    --audio-only      Download audio only
-echo ║
-echo ║  Examples:
-echo ║    python youtube_downloader.py "https://youtube.com/watch?v=dQw4w9WgXcQ"
-echo ║    python youtube_downloader.py "URL" -q 1080p -m ultra
-echo ║    python youtube_downloader.py "URL" --audio-only
-echo ║
 pause
 goto mainmenu
 
@@ -228,43 +203,93 @@ goto mainmenu
 :exit
 cls
 call :printHeader
-echo ║  👋 Goodbye! Thank you for using YouTube Downloader.        ║
-echo %END%
-exit /b 0
+echo                             ║      👋 Goodbye! Thank you for using YouTube Downloader.        ║
+timeout /t 5 /nobreak >nul
+exit
 
 REM ──────────────────────────────────────────────────────────────
 REM  BEAUTIFUL PRINT FUNCTIONS
 REM ──────────────────────────────────────────────────────────────
 :printHeader
 echo.
-echo %BORDER%
-echo ║              YOUTUBE DOWNLOADER LAUNCHER                   ║
-echo ║        Cross-Platform Edition   (Platform: Windows)        ║
-echo ║  For other platforms: ./launcher.sh or python launcher.py  ║
-echo %END%
 echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+call :printEmbeddedHeader
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+goto :eof
+
+:printEmbeddedHeader
+setlocal ENABLEDELAYEDEXPANSION
+if "%USE_ASCII%"=="1" (
+    set "h1=                                                     █████ █████ ██████████   █████"
+    set "h2=                                                    ▒▒███ ▒▒███ ▒▒███▒▒▒▒███ ▒▒███"
+    set "h3=                                                     ▒▒███ ███   ▒███   ▒▒███ ▒███"
+    set "h4=                                   __                 ▒▒█████    ▒███    ▒███ ▒███"
+    set "h5=                                  / /_  __  __         ▒▒███     ▒███    ▒███ ▒███"
+    set "h6=                                 / __ \/ / / /          ▒███     ▒███    ███  ▒███      █"
+    set "h7=                                / /_/ / /_/ /           █████    ██████████   ███████████"
+    set "h8=                               /_.___/\__, /           ▒▒▒▒▒    ▒▒▒▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒▒▒"
+    set "h9=                                     /____/"
+) else (
+    set "h1=                                                     █████ █████ ██████████   █████"
+    set "h2=                                                    ▒▒███ ▒▒███ ▒▒███▒▒▒▒███ ▒▒███"
+    set "h3=                                                     ▒▒███ ███   ▒███   ▒▒███ ▒███"
+    set "h4=                                   __                 ▒▒█████    ▒███    ▒███ ▒███"
+    set "h5=                                  / /_  __  __         ▒▒███     ▒███    ▒███ ▒███"
+    set "h6=                                 / __ \/ / / /          ▒███     ▒███    ███  ▒███      █"
+    set "h7=                                / /_/ / /_/ /           █████    ██████████   ███████████"
+    set "h8=                               /_.___/\__, /           ▒▒▒▒▒    ▒▒▒▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒▒▒"
+    set "h9=                                     /____/"
+)
+echo !h1!
+echo !h2!
+echo !h3!
+echo !h4!
+echo !h5!
+echo !h6!
+echo !h7!
+echo !h8!
+echo !h9!
+endlocal
+echo.
+goto :eof
 goto :eof
 
 :printAnimatedHeader
 echo.
-for /f "delims=" %%L in ('powershell -NoProfile -Command "[Console]::ForegroundColor='Cyan'; Write-Host '╔' + '═' * 60 + '╗' -NoNewline; Start-Sleep -Milliseconds 60; Write-Host ''; [Console]::ForegroundColor='White'"') do (
-    rem no-op to consume output
-)
-echo %BORDER%
-echo ║              YOUTUBE DOWNLOADER LAUNCHER                   ║
-echo ║        Cross-Platform Edition   (Platform: Windows)        ║
-echo ║  For other platforms: ./launcher.sh or python launcher.py  ║
-echo %END%
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
+call :printEmbeddedHeader
+echo.
+echo.
+echo.
+echo.
+echo.
+echo.
 echo.
 goto :eof
 
 :printMenu
-echo ║  1. Start Web Interface                                    ║
-echo ║  2. Command Line Help                                      ║
-echo ║  3. Setup Dependencies                                     ║
-echo ║  4. Update yt-dlp                                          ║
-echo ║  5. Exit                                                   ║
-echo %END%
+echo                           %w%[%y% %c%%u%1%q%%t% %w%]%y% %c%Web Interface%t%                        %w%[%y% %c%%u%2%q% %t%%w%]%y% %c%Setup Dependencies%t%
+echo. 
+echo.
+echo                         %w%[%y% %c%%u%3%q%%t% %w%]%y% %c%Update requirements%t%                            %w%[%y% %c%%u%4%q% %t%%w%]%y% %c%Exit%t%
 echo.
 goto :eof
 
@@ -272,7 +297,7 @@ goto :eof
 setlocal
 set "msg=%~1"
 echo ║  %msg%
-echo ╠════════════════════════════════════════════════════════════╣
+echo ╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════╣
 endlocal
 goto :eof
 

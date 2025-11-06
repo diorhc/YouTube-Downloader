@@ -16,10 +16,15 @@ pkg update -y
 echo "⬇️  Installing system dependencies..."
 pkg install -y python ffmpeg git wget curl
 
+# Install Python packages that require compilation
+echo "� Installing numpy from Termux repository..."
+pkg install -y python-numpy
+
 # Install Python packages
 echo "🐍 Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+# Note: Do NOT use 'pip install --upgrade pip' in Termux!
+# numpy is installed via pkg, not pip (requires compilation)
+pip install Flask waitress yt-dlp moviepy colorama
 
 # Setup storage
 echo "📁 Setting up storage access..."

@@ -41,17 +41,17 @@ pkg install git -y
 cd ~
 
 # Клонируйте репозиторий
-git clone https://github.com/diorhc/YouTube-Downloader.git
+git clone https://github.com/diorhc/YTDL.git
 
 # Перейдите в директорию проекта
-cd YouTube-Downloader
+cd YTDL
 ```
 
 ### Шаг 5: Запуск установщика
 
 ```bash
 # Сделайте скрипт исполняемым
-chmod +x launcher_termux.sh
+chmod +x launcher_termux.sh setup_termux.sh
 
 # Запустите установщик
 ./launcher_termux.sh
@@ -61,9 +61,11 @@ chmod +x launcher_termux.sh
 
 В меню выберите:
 
-1. **Опция 3** - Install Termux Dependencies (Python, FFmpeg, etc.)
-2. **Опция 4** - Install Python Dependencies (Flask, yt-dlp, etc.)
+1. **Опция 3** - Install Termux Dependencies (Python, FFmpeg, numpy, etc.)
+2. **Опция 4** - Install Python Dependencies (Flask, yt-dlp, moviepy, etc.)
 3. **Опция 5** - Setup Storage Access (доступ к файлам Android)
+
+**Важно:** numpy устанавливается через pkg (опция 3), а не через pip, так как требует компиляции!
 
 ## 🎯 Использование
 
@@ -106,7 +108,7 @@ python youtube_downloader.py "https://youtu.be/VIDEO_ID" --audio-only
 
 - `~/storage/downloads/YouTube` - если настроен доступ к хранилищу
 - `~/storage/shared/Download/YouTube` - альтернативная папка
-- `~/YouTube-Downloader/downloads` - резервная папка
+- `~/YTDL/downloads` - резервная папка
 
 Чтобы увидеть загруженные файлы в стандартном файловом менеджере Android, используйте **Setup Storage Access** (опция 5).
 
@@ -120,6 +122,10 @@ python youtube_downloader.py "https://youtu.be/VIDEO_ID" --audio-only
 
 # Обновление зависимостей
 pip install --upgrade -r requirements.txt
+
+# ⚠️ ВАЖНО: НЕ обновляйте pip через pip в Termux!
+# pip install --upgrade pip  ❌ Это сломает python-pip пакет!
+# Используйте: pkg upgrade python-pip  ✅
 
 # Проверка статуса
 ./launcher_termux.sh
@@ -228,6 +234,20 @@ pip install --upgrade yt-dlp
 # Или через launcher (опция 4)
 ```
 
+### Ошибка: "Installing pip is forbidden"
+
+Эта ошибка появляется при попытке обновить pip в Termux.
+
+```bash
+# ❌ НЕ ДЕЛАЙТЕ ТАК:
+pip install --upgrade pip
+
+# ✅ ПРАВИЛЬНО - обновляйте через pkg:
+pkg upgrade python-pip
+```
+
+**Причина:** В Termux pip управляется пакетным менеджером, и его обновление через pip сломает систему.
+
 ## 📋 Системные требования
 
 ### Минимальные
@@ -259,7 +279,7 @@ pip install --upgrade yt-dlp
 
 ```bash
 # Перейдите в директорию проекта
-cd ~/YouTube-Downloader
+cd ~/YTDL
 
 # Получите последние изменения
 git pull
@@ -297,7 +317,7 @@ pip install --upgrade -r requirements.txt
 nano ~/.bashrc
 
 # Добавьте строки:
-cd ~/YouTube-Downloader
+cd ~/YTDL
 ./launcher_termux.sh
 
 # Сохраните: Ctrl+X, затем Y, затем Enter
@@ -340,7 +360,7 @@ cd ~/YouTube-Downloader
 - [Документация Termux](https://wiki.termux.com/)
 - [F-Droid Termux](https://f-droid.org/packages/com.termux/)
 - [Основной README](README.md)
-- [GitHub репозиторий](https://github.com/diorhc/YouTube-Downloader)
+- [GitHub репозиторий](https://github.com/diorhc/YTDL)
 
 ---
 

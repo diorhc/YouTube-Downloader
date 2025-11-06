@@ -51,8 +51,8 @@ Write-Host "Shortcut created on Desktop: YouTube Downloader.lnk"
 # Clone repository
 sudo apt update
 sudo apt install -y git curl
-git clone https://github.com/diorhc/YouTube-Downloader.git
-cd YouTube-Downloader
+git clone https://github.com/diorhc/YTDL.git
+cd YTDL
 
 # Make launcher executable
 chmod +x launcher.sh
@@ -260,8 +260,8 @@ yt-dlp -U
 ### Development Setup
 
 ```bash
-git clone https://github.com/diorhc/YouTube-Downloader.git
-cd youtube-downloader
+git clone https://github.com/diorhc/YTDL.git
+cd YTDL
 pip install -r requirements.txt
 pip install pytest black flake8
 python -m pytest

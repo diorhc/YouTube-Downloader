@@ -29,7 +29,7 @@ print_header() {
     clear
     echo -e "${CYAN}${BOLD}"
     echo "╔═══════════════════════════════════════════════╗"
-    echo "║    🎬 YouTube Downloader for Termux 🤖      ║"
+    echo "║    🎬 YouTube Downloader for Termux 🤖       ║"
     echo "╚═══════════════════════════════════════════════╝${RESET}"
     echo ""
 }
@@ -107,6 +107,10 @@ install_termux_dependencies() {
     print_info "Installing required packages..."
     pkg install -y python ffmpeg git wget curl
     
+    print_info "Installing Python packages that require compilation..."
+    # numpy must be installed from Termux repo, not pip (requires compilation)
+    pkg install -y python-numpy
+    
     detect_python
     detect_pip
     detect_ffmpeg
@@ -124,10 +128,25 @@ install_python_dependencies() {
     detect_pip
     
     print_info "Installing Python packages from requirements.txt..."
-    $PIP_CMD install --upgrade pip
-    $PIP_CMD install -r requirements.txt
+    # Note: Do NOT upgrade pip in Termux - it will break python-pip package
+    # Use 'pkg upgrade python-pip' instead if needed
+    # Note: numpy is installed via pkg, not pip (requires compilation)
+    
+    # Install packages one by one to handle errors better
+    print_info "Installing Flask..."
+    $PIP_CMD install Flask waitress || print_warning "Flask installation had issues, continuing..."
+    
+    print_info "Installing yt-dlp..."
+    $PIP_CMD install yt-dlp || print_warning "yt-dlp installation had issues, continuing..."
+    
+    print_info "Installing moviepy (may take a while)..."
+    $PIP_CMD install moviepy || print_warning "moviepy installation had issues, continuing..."
+    
+    print_info "Installing colorama..."
+    $PIP_CMD install colorama || print_warning "colorama installation had issues, continuing..."
     
     print_success "Python dependencies installed!"
+    print_info "Note: numpy was installed via pkg (system package)"
     echo ""
     read -p "Press Enter to continue..."
 }

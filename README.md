@@ -2,10 +2,12 @@
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![Flask](https://img.shields.io/badge/flask-web%20interface-green.svg)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 A modern, feature-rich YouTube downloader with a beautiful web interface and powerful command-line tools. Download videos up to 8K quality with intelligent fallback mechanisms and advanced error recovery.
+
+> **📱 Android Users**: See [ANDROID_INDEX.md](ANDROID_INDEX.md) for complete Termux documentation and guides.
 
 > **⚠️ Legal Notice**: This tool is for educational and personal use only. Please respect YouTube's Terms of Service and copyright laws. Only download content you have permission to download.
 
@@ -15,14 +17,16 @@ A modern, feature-rich YouTube downloader with a beautiful web interface and pow
 - **Modern Web Interface:** Responsive design, dark/light mode, real-time progress, download history, clipboard integration, mobile-friendly
 - **Advanced Technology:** Dual-mode (Ultra/Standard), intelligent error recovery, rate limiting protection, multi-threaded downloads, FFmpeg integration
 - **Reliability & Robustness:** Multiple retry mechanisms, cookie-based sessions, format fallback, production-ready WSGI server
+- **Multi-Platform:** Full support for Windows, macOS, Linux, and Android (Termux)
 
 ## 🚀 Quick Start
 
 ### 🖥️ Windows (One-Click Setup)
+
 ```batch
 # Clone repository
-git clone https://github.com/diorhc/YouTube-Downloader.git
-cd YouTube-Downloader
+git clone https://github.com/diorhc/YTDL.git
+cd YTDL
 
 $desktop = "$env:USERPROFILE\Desktop"
 if (-not (Test-Path $desktop)) {
@@ -42,6 +46,7 @@ Write-Host "Shortcut created on Desktop: YouTube Downloader.lnk"
 ```
 
 ### 🐧 Linux / 🍎 macOS
+
 ```bash
 # Clone repository
 sudo apt update
@@ -60,6 +65,33 @@ chmod +x launcher.sh
 
 **📖 See [README_UNIX.md](README_UNIX.md) for detailed Mac/Linux installation guide**
 
+### 🤖 Android (Termux)
+
+```bash
+# Install Termux from F-Droid (not Google Play!)
+# https://f-droid.org/packages/com.termux/
+
+# Update packages
+pkg update -y && pkg upgrade -y
+
+# Clone repository
+pkg install git -y
+git clone https://github.com/diorhc/YTDL.git
+cd YTDL
+
+# Make launcher executable
+chmod +x launcher_termux.sh
+
+# Start application
+./launcher_termux.sh
+# Choose option 3 (Install Termux Dependencies)
+# Choose option 4 (Install Python Dependencies)
+# Choose option 5 (Setup Storage Access)
+# Choose option 1 (Launch Web Interface)
+```
+
+**📱 See [README_TERMUX.md](README_TERMUX.md) for detailed Android/Termux installation guide**
+
 ### 🌐 Web Interface Usage
 
 1. **Start the server:** `python web_app.py` or `launcher.bat`
@@ -72,6 +104,7 @@ chmod +x launcher.sh
 ## 🖱️ Command Line Interface
 
 ### Basic Usage
+
 ```bash
 # Download best quality
 python youtube_downloader.py "https://youtu.be/VIDEO_ID"
@@ -90,6 +123,7 @@ python youtube_downloader.py "https://youtu.be/VIDEO_ID" --list-formats
 ```
 
 ### Advanced Options
+
 ```bash
 # Ultra mode (separate video/audio streams)
 python youtube_downloader.py "https://youtu.be/VIDEO_ID" --mode ultra -q 4k
@@ -113,13 +147,25 @@ YouTube Downloader/
 ├── test_quality_fix.py       # Quality detection
 ├── launcher.bat              # Windows launcher
 ├── launcher.sh               # Mac/Linux launcher (chmod +x required)
+├── launcher_termux.sh        # Android/Termux launcher (chmod +x required)
+├── setup_termux.sh           # Quick setup for Termux
 ├── requirements.txt          # Python dependencies
 ├── LICENSE                   # MIT license
 ├── README.md                 # Main documentation
 ├── README_UNIX.md            # Mac/Linux installation guide
+├── README_TERMUX.md          # Android/Termux installation guide
+├── QUICKSTART_TERMUX.md      # Quick start for Termux
+├── FAQ_TERMUX.md             # FAQ for Termux users
+├── OPTIMIZATION_TERMUX.md    # Optimization tips for Android
 │
 ├── templates/
 │   └── index.html            # Web interface template
+│
+├── .termux/                  # Termux widget shortcuts
+│   └── shortcuts/
+│       ├── youtube-downloader-web.sh
+│       ├── youtube-downloader-menu.sh
+│       └── README.md
 │
 └── downloads/                # Downloaded videos (auto-created)
 ```
@@ -127,7 +173,9 @@ YouTube Downloader/
 ## 🛠️ Configuration
 
 ### Environment Variables
+
 Create a `.env` file for custom configuration:
+
 ```env
 FLASK_HOST=0.0.0.0
 FLASK_PORT=5005
@@ -140,7 +188,9 @@ USER_AGENT=Custom User Agent
 ```
 
 ### Custom Settings
+
 Edit `web_app.py`:
+
 ```python
 DOWNLOAD_DIR = "D:/MyVideos/"
 HOST = "0.0.0.0"  # Listen on all interfaces
@@ -154,9 +204,9 @@ current Python environment using a small whitelist of core packages. This runs
 in dry-run mode by default so it only prints the proposed changes.
 
 - Disable automatic checks by setting the environment variable
-    `AUTO_UPDATE_REQUIREMENTS=0`.
+  `AUTO_UPDATE_REQUIREMENTS=0`.
 - Force a real write by setting `AUTO_UPDATE_DRY_RUN=0` before running the
-    launcher.
+  launcher.
 - Or pass the CLI flag `--no-auto-update` when starting `launcher.py`.
 
 The feature is conservative: it updates a short, maintainable list of core
@@ -168,21 +218,23 @@ automatically. This runs `pip list --outdated` and upgrades packages one-by-one.
 
 ## 🐛 Troubleshooting
 
-| Problem                  | Solution                                      |
-|--------------------------|-----------------------------------------------|
-| `ModuleNotFoundError`    | Run `pip install -r requirements.txt`         |
-| Web server won't start   | Check if port 5005 is in use, try another     |
-| Download fails           | Update yt-dlp: `pip install --upgrade yt-dlp` |
-| No audio in video        | Install FFmpeg and ensure it's in PATH        |
-| 403 Forbidden errors     | Tool retries automatically                    |
-| Slow downloads           | Check internet, YouTube may be rate limiting  |
+| Problem                | Solution                                      |
+| ---------------------- | --------------------------------------------- |
+| `ModuleNotFoundError`  | Run `pip install -r requirements.txt`         |
+| Web server won't start | Check if port 5005 is in use, try another     |
+| Download fails         | Update yt-dlp: `pip install --upgrade yt-dlp` |
+| No audio in video      | Install FFmpeg and ensure it's in PATH        |
+| 403 Forbidden errors   | Tool retries automatically                    |
+| Slow downloads         | Check internet, YouTube may be rate limiting  |
 
 ### Debug Mode
+
 ```bash
 python web_app.py --debug
 ```
 
 ### Updating yt-dlp
+
 ```bash
 pip install --upgrade yt-dlp
 yt-dlp -U
@@ -206,6 +258,7 @@ yt-dlp -U
 7. **Open a Pull Request**
 
 ### Development Setup
+
 ```bash
 git clone https://github.com/diorhc/YouTube-Downloader.git
 cd youtube-downloader
@@ -220,7 +273,30 @@ flake8 *.py
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🙏 Acknowledgments
+## � Documentation
+
+### Platform-Specific Guides
+
+- **[README_UNIX.md](README_UNIX.md)** - Detailed guide for macOS and Linux
+- **[README_TERMUX.md](README_TERMUX.md)** - Complete guide for Android (Termux)
+- **[QUICKSTART_TERMUX.md](QUICKSTART_TERMUX.md)** - Quick start for Termux users
+
+### Android/Termux Resources
+
+- **[FAQ_TERMUX.md](FAQ_TERMUX.md)** - Frequently asked questions for Termux
+- **[OPTIMIZATION_TERMUX.md](OPTIMIZATION_TERMUX.md)** - Performance optimization tips
+- **[termux_examples.sh](termux_examples.sh)** - Useful command examples
+
+### Quick Links by Platform
+
+| Platform   | Quick Start            | Full Guide                           |
+| ---------- | ---------------------- | ------------------------------------ |
+| 🖥️ Windows | Run `launcher.bat`     | [README.md](README.md)               |
+| 🐧 Linux   | `./launcher.sh`        | [README_UNIX.md](README_UNIX.md)     |
+| 🍎 macOS   | `./launcher.sh`        | [README_UNIX.md](README_UNIX.md)     |
+| 🤖 Android | `./launcher_termux.sh` | [README_TERMUX.md](README_TERMUX.md) |
+
+## �🙏 Acknowledgments
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Download engine
 - [Flask](https://flask.palletsprojects.com/) - Web framework

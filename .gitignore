@@ -2,3 +2,5 @@ __pycache__
 downloads
 python_embedded
 INSTALL.txt
+docs
+.termux

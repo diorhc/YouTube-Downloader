@@ -101,7 +101,7 @@ REM === Download ffmpeg if not present ===
     if not exist "%FFMPEG%" (
     call :printInfo "Downloading ffmpeg..."
     call :startSpinner 160
-    powershell -Command "Invoke-WebRequest -Uri 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip' -OutFile 'ffmpeg.zip'" 2>&1
+    powershell -Command "Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile 'ffmpeg.zip'" 2>&1
     call :stopSpinner
     if exist "ffmpeg.zip" (
         call :printInfo "Extracting ffmpeg..."

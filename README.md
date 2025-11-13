@@ -1,3 +1,4 @@
+![Demo (screenshot)](https://i.imgur.com/ANZOcKP.png)
 # 🎬 YouTube Downloader
 
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
@@ -6,8 +7,6 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
 A modern, feature-rich YouTube downloader with a beautiful web interface and powerful command-line tools. Download videos up to 8K quality with intelligent fallback mechanisms and advanced error recovery.
-
-> **📱 Android Users**: See [ANDROID_INDEX.md](ANDROID_INDEX.md) for complete Termux documentation and guides.
 
 > **⚠️ Legal Notice**: This tool is for educational and personal use only. Please respect YouTube's Terms of Service and copyright laws. Only download content you have permission to download.
 
@@ -154,18 +153,9 @@ YouTube Downloader/
 ├── README.md                 # Main documentation
 ├── README_UNIX.md            # Mac/Linux installation guide
 ├── README_TERMUX.md          # Android/Termux installation guide
-├── QUICKSTART_TERMUX.md      # Quick start for Termux
-├── FAQ_TERMUX.md             # FAQ for Termux users
-├── OPTIMIZATION_TERMUX.md    # Optimization tips for Android
 │
 ├── templates/
 │   └── index.html            # Web interface template
-│
-├── .termux/                  # Termux widget shortcuts
-│   └── shortcuts/
-│       ├── youtube-downloader-web.sh
-│       ├── youtube-downloader-menu.sh
-│       └── README.md
 │
 └── downloads/                # Downloaded videos (auto-created)
 ```
@@ -272,20 +262,6 @@ flake8 *.py
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## � Documentation
-
-### Platform-Specific Guides
-
-- **[README_UNIX.md](README_UNIX.md)** - Detailed guide for macOS and Linux
-- **[README_TERMUX.md](README_TERMUX.md)** - Complete guide for Android (Termux)
-- **[QUICKSTART_TERMUX.md](QUICKSTART_TERMUX.md)** - Quick start for Termux users
-
-### Android/Termux Resources
-
-- **[FAQ_TERMUX.md](FAQ_TERMUX.md)** - Frequently asked questions for Termux
-- **[OPTIMIZATION_TERMUX.md](OPTIMIZATION_TERMUX.md)** - Performance optimization tips
-- **[termux_examples.sh](termux_examples.sh)** - Useful command examples
 
 ### Quick Links by Platform
 
